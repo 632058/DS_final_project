@@ -143,7 +143,7 @@ CAMEO（Conflict and Mediation Event Observations，衝突與調停事件觀察�
 
 用CAMEO代碼我們可以直接知道該事件大概發生了什麼事情不用細看，當然本次專案中不一定要用CAMEO來做，有很多其他欄位可以做分析，但CAMEO是最常用的
 
-### 2. 事件編碼 (Event Codes)
+### 事件編碼 (Event Codes)
 CAMEO 採用**階層式（樹狀）架構**來定義「誰對誰做了什麼動作」。事件代碼通常由 2 到 4 位數字組成，層級越深，描述越具體
 
 最頂層有 20 個**根代碼 (Root Codes)**，涵蓋了人類社會中主要的互動行為：
