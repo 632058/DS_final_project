@@ -116,7 +116,7 @@ else:
     plt.plot(df['event_date'], df['daily_count'], marker='o', linestyle='-', color='#e74c3c', linewidth=2)
 
     # 設定標題與標籤
-    plt.title('Daily Trend of USA-Iran Interactions (EventCode > 19)', fontsize=14, fontweight='bold')
+    plt.title('Daily Trend of USA-Iran Interactions (EventCode > 15)', fontsize=14, fontweight='bold')
     plt.xlabel('Date', fontsize=12)
     plt.ylabel('Total Events', fontsize=12)
 
@@ -127,7 +127,7 @@ else:
     plt.show()
 ```
 
-<img width="1189" height="590" alt="image" src="https://github.com/user-attachments/assets/2cddba66-2b83-494c-b392-20da487bfa5e" />
+<img width="1189" height="590" alt="image" src="https://github.com/user-attachments/assets/9535f794-38e6-40f3-b48e-4cda68163296" />
 
 
 
