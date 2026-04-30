@@ -8,11 +8,11 @@
 
 1. **輕量實驗版（建議先使用）**  
    已經過篩選的資料集，檔案較小，適合測試程式碼與熟悉欄位 
-   - [點我下載實驗版資料庫（gdelt_filtered_20251001_20260428.duckdb）]([https://drive.google.com/file/d/1rT7ho_RXkcK8J4RYyKBqP4fh14FrAUqg/view?usp=drive_link])
+   - https://drive.google.com/file/d/1rT7ho_RXkcK8J4RYyKBqP4fh14FrAUqg/view?usp=drive_link
 
 2. **完整版資料庫**  
    包含全量資料，檔案較大，適合final project  
-   - [點我下載完整版資料庫（gdelt.duckdb）]([https://drive.google.com/file/d/1emP2Ezg7ddljCogeqIDrYajucPEPfPiv/view?usp=drive_link])
+   - https://drive.google.com/file/d/1emP2Ezg7ddljCogeqIDrYajucPEPfPiv/view?usp=drive_link
 
 ---
 
