@@ -28,7 +28,7 @@ pip install duckdb pandas
 
 ## Quick Start
 
-下載好資料庫檔案（例如 `gdelt_filtered.duckdb`）並放在與程式碼同一個資料夾後，可以執行以下 Python 程式碼查看前 20 筆資料：
+下載好資料庫檔案（例如 `gdelt_filtered.duckdb`）並放在與程式碼同一個資料夾後，可以執行以下 Python 程式碼查看前 20 筆資料與一些屬性：
 
 ```python
 import duckdb
@@ -36,6 +36,27 @@ import duckdb
 db_path = "gdelt_filtered_20251001_20260428.duckdb"
 con = duckdb.connect(db_path)
 
+# 1. 查詢總筆數、最小時間 (最早) 與最大時間 (最新)
+stats = con.sql("""
+    SELECT 
+        COUNT(*) AS total_rows,
+        MIN(DATEADDED) AS min_date,
+        MAX(DATEADDED) AS max_date
+    FROM gdelt_events
+""").fetchone()
+
+total_rows = stats[0]
+min_date = stats[1]
+max_date = stats[2]
+
+# 印出摘要資訊
+print("=== 資料庫摘要資訊 ===")
+print(f"總資料筆數: {total_rows:,} 筆")
+print(f"最早 DATEADDED: {min_date}")
+print(f"最新 DATEADDED: {max_date}")
+print("======================\n")
+
+# 2. 查詢 gdelt_events 的前 20 筆資料
 print("查詢 gdelt_events 的前 20 筆資料：\n")
 con.sql("SELECT * FROM gdelt_events LIMIT 20").show()
 
