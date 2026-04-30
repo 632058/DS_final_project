@@ -108,9 +108,7 @@ duckdb雖然是一個檔案但操作方法近似sql，若不太熟悉的話，�
 
 請注意“SQLDATE”欄位是事件發生日期，“DATEADDED”欄位才是被加入資料庫的日期，也就是說有時候新聞會回顧過去的事件導致最新的“DATEADDED”但“SQLDATE”是過去的時間，所以建議要做“預測“的話，一律以“DATEADDED”為準否則會有”Look ahead bias“
 
-# CAMEO 編碼 (Conflict and Mediation Event Observations) 說明
-
-## 什麼是 CAMEO 編碼？
+## CAMEO 編碼 (Conflict and Mediation Event Observations) 說明
 
 CAMEO（Conflict and Mediation Event Observations，衝突與調停事件觀察）是一種用於對**國際政治和社會事件進行自動化分類與編碼**的框架系統。
 
