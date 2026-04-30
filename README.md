@@ -66,7 +66,7 @@ con.close()
 
 ### 應用範例：繪製每日事件趨勢圖 (Matplotlib)
 
-如果你想進一步視覺化分析資料，例如「計算每天發生 `EventCode > 19` 的事件總數並畫出折線圖」(EventCode是一種CAMEO代碼，詳見後面說明)，你可以結合 `pandas` 與 `matplotlib` 來完成
+如果你想進一步視覺化分析資料，例如「計算美國和伊朗之間發生 `EventCode > 15` 的事件總數並畫出折線圖」(EventCode是一種CAMEO代碼，詳見後面說明)，你可以結合 `pandas` 與 `matplotlib` 來完成
 
 請先確保你已經安裝了繪圖套件：
 `pip install matplotlib`
@@ -82,17 +82,20 @@ import matplotlib.pyplot as plt
 db_path = "gdelt_filtered_20251001_20260428.duckdb"
 con = duckdb.connect(db_path)
 
-print("正在彙整資料並繪製圖表...\n")
+print("正在彙整美國與伊朗之間的互動資料並繪製圖表...\n")
 
-# SQL 查詢邏輯：
-# 1. 將 DATEADDED (整數) 轉為字串後，取前 8 碼 (YYYYMMDD) 作為日期分組基準
-# 2. 篩選 EventCode 大於 19 的事件 (使用 TRY_CAST 避免字串轉換錯誤)
+# SQL 查詢邏輯修正：
+# 加入國家過濾條件，確保 Actor1 與 Actor2 分別為 USA 與 IRN (雙向皆包含)
 query = """
     SELECT 
         SUBSTRING(CAST(DATEADDED AS VARCHAR), 1, 8) AS event_date,
         COUNT(*) AS daily_count
     FROM gdelt_events 
-    WHERE TRY_CAST(EventCode AS INTEGER) > 19
+    WHERE TRY_CAST(EventCode AS INTEGER) > 15
+      AND (
+          (Actor1CountryCode = 'USA' AND Actor2CountryCode = 'IRN') OR
+          (Actor1CountryCode = 'IRN' AND Actor2CountryCode = 'USA')
+      )
     GROUP BY event_date
     ORDER BY event_date
 """
@@ -101,26 +104,31 @@ query = """
 df = con.sql(query).df()
 con.close()
 
-# 將 event_date 欄位從字串轉換為真正的 datetime 格式，這樣畫圖的 X 軸才會正確顯示時間尺度
-df['event_date'] = pd.to_datetime(df['event_date'], format='%Y%m%d')
+# 檢查是否有資料
+if df.empty:
+    print("在此篩選條件下找不到任何資料，請檢查 EventCode 或國家代碼。")
+else:
+    # 轉換日期格式
+    df['event_date'] = pd.to_datetime(df['event_date'], format='%Y%m%d')
 
-# --- 開始繪製折線圖 ---
-plt.figure(figsize=(12, 6))
-plt.plot(df['event_date'], df['daily_count'], marker='o', linestyle='-', color='#1f77b4', linewidth=2)
+    # --- 繪製折線圖 ---
+    plt.figure(figsize=(12, 6))
+    plt.plot(df['event_date'], df['daily_count'], marker='o', linestyle='-', color='#e74c3c', linewidth=2)
 
-# 設定圖表標題與座標軸標籤
-plt.title('Daily Trend of Events (EventCode > 19)', fontsize=14, fontweight='bold')
-plt.xlabel('Date (from DATEADDED)', fontsize=12)
-plt.ylabel('Total Events', fontsize=12)
+    # 設定標題與標籤
+    plt.title('Daily Trend of USA-Iran Interactions (EventCode > 19)', fontsize=14, fontweight='bold')
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Total Events', fontsize=12)
 
-# 增加格線與美化 X 軸日期標籤
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(rotation=45)
-plt.tight_layout()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
 
-# 顯示圖表
-plt.show()
+    plt.show()
 ```
+
+<img width="1189" height="590" alt="image" src="https://github.com/user-attachments/assets/2cddba66-2b83-494c-b392-20da487bfa5e" />
+
 
 
 ### 注意事項
