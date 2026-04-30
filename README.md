@@ -45,7 +45,7 @@ con.close()
 
 ### 應用範例：繪製每日事件趨勢圖 (Matplotlib)
 
-如果你想進一步視覺化分析資料，例如「計算每天發生 `EventCode > 19` 的事件總數並畫出折線圖」，你可以結合 `pandas` 與 `matplotlib` 來完成
+如果你想進一步視覺化分析資料，例如「計算每天發生 `EventCode > 19` 的事件總數並畫出折線圖」(EventCode是一種CAMEO代碼，詳見後面說明)，你可以結合 `pandas` 與 `matplotlib` 來完成
 
 請先確保你已經安裝了繪圖套件：
 `pip install matplotlib`
