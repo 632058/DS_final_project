@@ -110,7 +110,7 @@ duckdb雖然是一個檔案但操作方法近似sql，若不太熟悉的話，�
 
 ## CAMEO 編碼 (Conflict and Mediation Event Observations) 說明
 
-CAMEO（Conflict and Mediation Event Observations，衝突與調停事件觀察）是一種用於對**國際政治和社會事件進行自動化分類與編碼**的框架系統。
+CAMEO（Conflict and Mediation Event Observations，衝突與調停事件觀察）是一種用於對**國際政治和社會事件進行自動化分類與編碼**的框架系統
 
 這個系統最初是為了研究國際衝突與第三方調停而開發的，由於其具備高度的結構化與清晰的階層定義，後來成為了全球最大事件資料庫 **GDELT (Global Database of Events, Language, and Tone)** 的核心分類標準。當自然語言處理系統在分析新聞報導時（例如讀到：「A國對B國實施經濟制裁」或「C群眾在廣場抗議」），就會運用 CAMEO 字典將這些非結構化的文本轉換為標準化的數據代碼
 
