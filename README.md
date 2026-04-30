@@ -28,7 +28,7 @@ pip install duckdb pandas
 
 ## Quick Start
 
-下載好資料庫檔案（例如 `gdelt_filtered.duckdb`）並放在與程式碼同一個資料夾後，可以執行以下 Python 程式碼查看前 20 筆資料與一些屬性：
+下載好資料庫檔案（例如 `gdelt_filtered_20251001_20260428.duckdb`）並放在與程式碼同一個資料夾後，可以執行以下 Python 程式碼查看前 20 筆資料與一些屬性：
 
 ```python
 import duckdb
