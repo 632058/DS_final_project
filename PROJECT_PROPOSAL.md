@@ -208,7 +208,7 @@ ORDER BY country, week_start;
 2. **Granger Causality Test**：
    - H₀：avg_tone does not Granger-cause protest_count
    - 對每國跑、報告 F-test 與 p-value
-3. **產出 Fig 5：CCF heatmap**（x=lag, y=country, color=correlation）
+3. **產出 Fig 4：CCF heatmap**（x=lag, y=country, color=correlation）
 
 #### 7.3.3 成員 E：機器學習建模
 
@@ -230,18 +230,17 @@ ORDER BY country, week_start;
 | Fig 1 | 雙軸折線圖（每國一張，左軸 tone、右軸 protest_count） |
 | Fig 2 | Goldstein / Tone 時序 heatmap（行=國、列=週、色=值） |
 | Fig 3 | 國家事件混合 UMAP / t-SNE（每點 = 「某國某週」） |
-| Fig 4 | TKG 動態網路 snapshot（危機前 vs 危機中） |
-| Fig 5 | CCF heatmap（成員 D 結果） |
-| Fig 6 | 預測 vs 實際散點圖 + 對角線 |
-| Fig 7 | Residual plot（檢查模型偏誤） |
-| Fig 8 | 時間序列 forecast 圖（藍=實際、紅=預測 + 95% CI） |
-| Fig 9 | SHAP summary plot |
+| Fig 4 | CCF heatmap（成員 D 結果） |
+| Fig 5 | 預測 vs 實際散點圖 + 對角線 |
+| Fig 6 | Residual plot（檢查模型偏誤） |
+| Fig 7 | 時間序列 forecast 圖（藍=實際、紅=預測 + 95% CI） |
+| Fig 8 | SHAP summary plot |
 
 ##### ⚠ 不建議使用的視覺化
 
 - **ROC 曲線**（ROC 是分類任務的圖、本專案是迴歸）
 - **Confusion Matrix**（同上）
-- 除非任務改成「預測下個月是否爆發抗議潮」二元分類，才使用 ROC
+- 除非任務改成「預測下個月是否爆發抗議潮」二元分類，才使用 ROC (見第10節)
 
 ##### 可選
 - 地圖視覺化（Folium / GeoPandas）：標示各國抗議事件熱度
@@ -257,7 +256,7 @@ ORDER BY country, week_start;
 | C | Week 1 準備 ARIMAX 程式框架；ADF 平穩性檢定（含差分處理）；ARIMAX 建模 + 模型診斷（Fig 8）；報告 Methodology / Time Series 章節 |
 | D | Week 1 準備 CCF + Granger 程式框架；CCF（lag 0–12 週）+ Granger Causality Test（Fig 5）；報告統計結果章節 |
 | E | Week 1 準備 Lasso/XGBoost 程式框架；Lasso/Ridge baseline + XGBoost（Fig 6, 7）；SHAP 分析（Fig 9）；報告 ML 章節 |
-| F | Week 1 建 repo 結構、視覺化模板；EDA 圖（Fig 1, 2）；降維視覺化（Fig 3）；TKG 動態網路 snapshot（Fig 4）；Week 4 整合所有圖；Week 3 起撰寫報告框架 |
+| F | Week 1 建 repo 結構、視覺化模板；EDA 圖（Fig 1, 2）；降維視覺化（Fig 3）；Week 4 整合所有圖；Week 3 起撰寫報告框架 |
 
 ---
 
@@ -269,8 +268,8 @@ ORDER BY country, week_start;
 |---|---|---|---|---|---|---|---|
 | **1** | 確認 FIPS 國碼、建 `country_weekly` | 依 schema 寫 feature engineering 程式框架 | 準備 ARIMAX 程式框架 | 準備 CCF + Granger 程式框架 | 準備 Lasso / XGBoost 程式框架 | 建 repo 結構、視覺化模板 | `country_weekly`（A）、各成員程式框架 |
 | **2** | 完成 `country_monthly` + schema doc | 收到 `country_weekly` 後立刻執行，交出 `feature_matrix` | ADF test（先跑 `country_weekly` 原始版） | ADF test（先跑 `country_weekly` 原始版） | 準備 train/test 切分邏輯 | Fig 1, Fig 2 | `feature_matrix`（B）、Fig 1,2（F）、schema doc（A） |
-| **3** | 建 `country_eventmix_weekly`；**協助 C 跑 ARIMAX**（負責 2–3 國） | 支援 C/D/E 的 feature 問題 | ARIMAX 框架 + 跑 2–3 國 + 整合 Fig 8 | CCF + Granger（Fig 5）；**協助 E 跑 Lasso baseline** | XGBoost 主模型（Fig 6, 7） | Fig 3（UMAP / t-SNE）、撰寫報告框架 | Fig 3,5,6,7,8、統計檢定報表 |
-| **4** | **協助 F 製作 Fig 4（TKG snapshot）**；撰寫 Data 章節 | 撰寫 Feature Engineering 章節 | 完成模型、撰寫 Methodology 章節 | **協助 E 跑 SHAP**；撰寫統計結果章節 | 撰寫 ML 章節 | 整合所有圖（Fig 4 與 A 合作） | 完整 figure set、各章節草稿 |
+| **3** | 建 `country_eventmix_weekly`；**協助 C 跑 ARIMAX**（負責 2–3 國） | 支援 C/D/E 的 feature 問題 | ARIMAX 框架 + 跑 2–3 國 + 整合 Fig 7 | CCF + Granger（Fig 4）；**協助 E 跑 Lasso baseline** | XGBoost 主模型（Fig 5, 6） | Fig 3（UMAP / t-SNE）、撰寫報告框架 | Fig 3,4,5,6,7、統計檢定報表 |
+| **4** | 撰寫 Data 章節 | 撰寫 Feature Engineering 章節 | 完成模型、撰寫 Methodology 章節 | **協助 E 跑 SHAP**；撰寫統計結果章節 | 撰寫 ML 章節 | 整合所有圖 | 完整 figure set（Fig 8 SHAP）、各章節草稿 |
 | **5** | **全員**：Report 最終整合、簡報製作、reproducibility check | | | | | | 最終交付 |
 
 ---
@@ -278,8 +277,8 @@ ORDER BY country, week_start;
 ## 10. 待確認事項（送組員會議決定）
 
 - [ ] 分析方向：國內情勢分析（`ActionGeo_CountryCode`）還是國家間情勢分析（`Actor1CountryCode` ↔ `Actor2CountryCode`）？（見第 5.3 節）
-- [ ] Repo 是否使用 GitHub Actions 跑 reproducibility check
 - [ ] 預測任務是否同時做迴歸（預測 `protest_count` 數量）與分類（預測「下個月是否爆發抗議潮」）兩個版本？迴歸版本已規劃完整，分類版本可加入 ROC / AUC 評估
+- [ ] Repo 是否使用 GitHub Actions 跑 reproducibility check
 
 ---
 
