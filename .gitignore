@@ -1,0 +1,44 @@
+# Data and intermediate outputs (too large for git)
+data/*
+!data/.gitkeep
+output/*
+!output/.gitkeep
+!output/arimax_results/
+!output/ccf_granger/
+!output/ml_results/
+output/arimax_results/*
+!output/arimax_results/.gitkeep
+output/ccf_granger/*
+!output/ccf_granger/.gitkeep
+output/ml_results/*
+!output/ml_results/.gitkeep
+figures/*
+!figures/.gitkeep
+
+# Large database files
+*.duckdb
+*.parquet
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environments
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Reports built artifacts
+report/*.pdf
+
+# AI tools
+CLAUDE.md
