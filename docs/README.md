@@ -100,6 +100,7 @@ DS_final_project/
 ├── report/                         # 各章節 markdown(已備骨架)
 ├── docs/                           # 本資料夾
 ├── requirements.txt
+├── pyproject.toml
 ├── .gitignore
 ├── PROJECT_PROPOSAL.md
 └── README.md
