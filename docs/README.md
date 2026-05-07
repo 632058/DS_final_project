@@ -122,6 +122,7 @@ source .venv/bin/activate         # Windows: .venv\Scripts\activate
 
 # 3. 安裝依賴
 pip install -r requirements.txt
+pip install -e .                  # 讓 scripts/ 能 import src/
 
 # 4. 把 .duckdb 檔案放到 data/(從 README.md 的 Google Drive 下載)
 # 預期路徑: data/gdelt_filtered_20251001_20260428.duckdb
