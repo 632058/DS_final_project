@@ -1,6 +1,6 @@
 # 期末專案提案文件
 
-> **最後更新**：2026-05-06
+> **最後更新**：2026-05-07
 
 ---
 
@@ -252,25 +252,23 @@ ORDER BY country, week_start;
 | 成員 | 負責工作 |
 |---|---|
 | A | 確認 FIPS 國碼；建立三張聚合表（`country_weekly` 優先交、`country_monthly`、`country_eventmix_weekly`）；撰寫 schema doc；報告 Data 章節 |
-| B | Week 1 依 schema 先寫 feature engineering 程式框架；收到 `country_weekly` 後執行，交出 `feature_matrix`；Week 3 起支援 C/D/E 的 feature 問題；報告 Feature Engineering 章節 |
+| B | Week 1 依 schema 先寫 feature engineering 程式框架；收到 `country_weekly` 後執行，交出 `feature_matrix`；Week 2 起支援 C/D/E 的 feature 問題；報告 Feature Engineering 章節 |
 | C | Week 1 準備 ARIMAX 程式框架；ADF 平穩性檢定（含差分處理）；ARIMAX 建模 + 模型診斷（Fig 8）；報告 Methodology / Time Series 章節 |
 | D | Week 1 準備 CCF + Granger 程式框架；CCF（lag 0–12 週）+ Granger Causality Test（Fig 5）；報告統計結果章節 |
 | E | Week 1 準備 Lasso/XGBoost 程式框架；Lasso/Ridge baseline + XGBoost（Fig 6, 7）；SHAP 分析（Fig 9）；報告 ML 章節 |
-| F | Week 1 建 repo 結構、視覺化模板；EDA 圖（Fig 1, 2）；降維視覺化（Fig 3）；Week 4 整合所有圖；Week 3 起撰寫報告框架 |
+| F | Week 1 建 repo 結構、視覺化模板；EDA 圖（Fig 1, 2）；降維視覺化（Fig 3）；Week 2 起撰寫報告框架；Week 3 整合所有圖 |
 
 ---
 
-## 9. 5 週時程（壓縮並行版）
+## 9. 3 週時程（壓縮並行版）
 
-> **設計原則**：A 優先交 `country_weekly`，讓 B、F 立刻開工；B 在等真實資料時先寫程式框架；C、D、E 從 Week 3 起完全並行；F 每週皆有產出，不等人。
+> **設計原則**：A 優先交 `country_weekly`（Week 1 Day 1-3），讓 B、F 立刻開工；其餘成員 Day 1-3 同步寫程式框架不等人；Week 2 起 C、D、E 完全並行做核心分析；Week 3 全員投入報告、簡報、reproducibility check。**負載互助**：C 的 5 國 ARIMAX 由 A 協助分擔 2–3 國；E 的 SHAP 由 D 協助。
 
 | 週次 | 成員 A | 成員 B | 成員 C | 成員 D | 成員 E | 成員 F | 週末交付 |
 |---|---|---|---|---|---|---|---|
-| **1** | 確認 FIPS 國碼、建 `country_weekly` | 依 schema 寫 feature engineering 程式框架 | 準備 ARIMAX 程式框架 | 準備 CCF + Granger 程式框架 | 準備 Lasso / XGBoost 程式框架 | 建 repo 結構、視覺化模板 | `country_weekly`（A）、各成員程式框架 |
-| **2** | 完成 `country_monthly` + schema doc | 收到 `country_weekly` 後立刻執行，交出 `feature_matrix` | ADF test（先跑 `country_weekly` 原始版） | ADF test（先跑 `country_weekly` 原始版） | 準備 train/test 切分邏輯 | Fig 1, Fig 2 | `feature_matrix`（B）、Fig 1,2（F）、schema doc（A） |
-| **3** | 建 `country_eventmix_weekly`；**協助 C 跑 ARIMAX**（負責 2–3 國） | 支援 C/D/E 的 feature 問題 | ARIMAX 框架 + 跑 2–3 國 + 整合 Fig 7 | CCF + Granger（Fig 4）；**協助 E 跑 Lasso baseline** | XGBoost 主模型（Fig 5, 6） | Fig 3（UMAP / t-SNE）、撰寫報告框架 | Fig 3,4,5,6,7、統計檢定報表 |
-| **4** | 撰寫 Data 章節 | 撰寫 Feature Engineering 章節 | 完成模型、撰寫 Methodology 章節 | **協助 E 跑 SHAP**；撰寫統計結果章節 | 撰寫 ML 章節 | 整合所有圖 | 完整 figure set（Fig 8 SHAP）、各章節草稿 |
-| **5** | **全員**：Report 最終整合、簡報製作、reproducibility check | | | | | | 最終交付 |
+| **1** | Day 1-3 確認 FIPS 國碼 + 建 `country_weekly`（**優先交**）；Day 4-7 建 `country_monthly` + schema doc | Day 1-3 依 schema 寫 feature engineering 程式框架；Day 4-7 收到 `country_weekly` 立刻執行，交出 `feature_matrix` v1 | Day 1-3 準備 ARIMAX 程式框架；Day 4-7 對 `country_weekly` 跑 ADF 平穩性檢定 + 差分處理 | Day 1-3 準備 CCF + Granger 程式框架；Day 4-7 對 `country_weekly` 跑初步 CCF | Day 1-3 準備 Lasso / XGBoost 程式框架 + train/test 切分邏輯；Day 4-7 收到 `feature_matrix` v1 後跑 Lasso baseline | Day 1-3 建 repo 結構 + 視覺化模板；Day 4-7 Fig 1, Fig 2 | `country_weekly`、`country_monthly`、`feature_matrix` v1、所有程式框架、Lasso baseline、Fig 1, Fig 2 |
+| **2** | 建 `country_eventmix_weekly`；撰寫 Data 章節初稿；**協助 C 跑 ARIMAX**（負責 2–3 國） | 補強 `feature_matrix`（rolling / lag / 變化率）；撰寫 Feature Engineering 章節初稿；支援 C/D/E 的 feature 問題 | ARIMAX 完整 5 國建模 + 模型診斷 + Fig 7（forecast）；撰寫 Methodology / Time Series 章節初稿 | CCF + Granger Causality 5 國 + Fig 4（CCF heatmap）；撰寫統計結果章節初稿；**協助 E 跑 SHAP** | XGBoost 主模型 + Fig 5（Pred vs Actual）+ Fig 6（Residual）；產出 SHAP（Fig 8）；撰寫 ML 章節初稿 | Fig 3（UMAP / t-SNE）；撰寫報告框架；整合 Fig 1–7 | `country_eventmix_weekly`、所有模型結果、Fig 3–8、各章節初稿 |
+| **3** | Data 章節最終版 + reproducibility check | Feature Engineering 章節最終版 + 協助整合 | Methodology / Time Series 章節最終版 + 簡報製作 | 統計結果章節最終版 + 簡報製作 | ML 章節最終版 + 簡報製作 | 整合所有圖 + 報告排版 + 簡報視覺 | 最終 Report、簡報、reproducibility check |
 
 ---
 
