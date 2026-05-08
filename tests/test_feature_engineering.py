@@ -82,3 +82,49 @@ def test_country_one_hot_keeps_country_column():
     out = add_country_one_hot(df)
     assert 'country' in out.columns
     assert any(c.startswith('is_') for c in out.columns)
+
+
+# ---------------------------------------------------------------------------
+# add_diff_features
+# ---------------------------------------------------------------------------
+
+def test_diff_1w_correct_value():
+    df = _make_dummy(n_weeks=20)
+    df.loc[df['country'] == 'CE', 'avg_tone'] = np.arange(20).astype(float)
+    out = add_diff_features(df)
+    ce = out[out['country'] == 'CE'].sort_values('week_start').reset_index(drop=True)
+    assert pd.isna(ce.loc[0, 'avg_tone_diff_1w'])
+    assert ce.loc[1, 'avg_tone_diff_1w'] == pytest.approx(1.0)
+    assert ce.loc[5, 'avg_tone_diff_1w'] == pytest.approx(1.0)
+
+
+def test_diff_does_not_cross_country_boundary():
+    df = _make_dummy(n_weeks=20)
+    out = add_diff_features(df)
+    for country in ['CE', 'AR']:
+        grp = out[out['country'] == country].sort_values('week_start').reset_index(drop=True)
+        assert pd.isna(grp.loc[0, 'avg_tone_diff_1w'])
+
+
+def test_diff_4w_correct_value():
+    df = _make_dummy(n_weeks=20)
+    df.loc[df['country'] == 'CE', 'avg_tone'] = np.arange(20).astype(float)
+    out = add_diff_features(df)
+    ce = out[out['country'] == 'CE'].sort_values('week_start').reset_index(drop=True)
+    assert ce.loc[4, 'avg_tone_diff_4w'] == pytest.approx(4.0)
+
+
+def test_pct_change_inf_replaced_by_nan():
+    df = _make_dummy(n_weeks=20)
+    df.loc[df['country'] == 'CE', 'avg_tone'] = 0.0
+    out = add_diff_features(df)
+    assert not np.isinf(out['avg_tone_pct_change_4w'].fillna(0)).any()
+
+
+def test_diff_columns_created_for_all_targets():
+    df = _make_dummy(n_weeks=20)
+    out = add_diff_features(df)
+    for target in ['avg_tone', 'avg_goldstein', 'n_material_conf']:
+        assert f'{target}_diff_1w' in out.columns
+        assert f'{target}_diff_4w' in out.columns
+        assert f'{target}_pct_change_4w' in out.columns

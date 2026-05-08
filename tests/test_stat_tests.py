@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from src.stat_tests import compute_ccf, granger_test
+from src.stat_tests import compute_ccf, granger_test, stationarity_diff
 
 
 def test_ccf_peak_at_known_lag():
@@ -55,3 +55,44 @@ def test_granger_dependent_rejects():
     y.name = 'y'
     result = granger_test(y, x, max_lag=5)
     assert result['reject_h0']
+
+
+# ---------------------------------------------------------------------------
+# stationarity_diff
+# ---------------------------------------------------------------------------
+
+def test_stationarity_diff_white_noise_returns_d0():
+    np.random.seed(42)
+    s = pd.Series(np.random.randn(200))
+    result, d = stationarity_diff(s)
+    assert d == 0
+    assert len(result) > 0
+
+
+def test_stationarity_diff_random_walk_returns_d1():
+    np.random.seed(42)
+    rw = pd.Series(np.cumsum(np.random.randn(200)))
+    result, d = stationarity_diff(rw)
+    assert d == 1
+    assert len(result) > 0
+
+
+def test_stationarity_diff_output_shorter_than_input():
+    np.random.seed(42)
+    rw = pd.Series(np.cumsum(np.random.randn(200)))
+    result, d = stationarity_diff(rw)
+    assert len(result) < len(rw)
+
+
+def test_stationarity_diff_max_d_cap():
+    np.random.seed(42)
+    rw = pd.Series(np.cumsum(np.random.randn(200)))
+    _, d = stationarity_diff(rw, max_d=1)
+    assert d <= 1
+
+
+def test_stationarity_diff_result_is_series():
+    np.random.seed(0)
+    s = pd.Series(np.random.randn(100))
+    result, _ = stationarity_diff(s)
+    assert isinstance(result, pd.Series)
