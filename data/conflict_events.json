@@ -1,0 +1,329 @@
+[
+  {
+    "name": "nagorno_karabakh_conflict_2016",
+    "outbreak_date": "2016-04-01",
+    "related_countries": [
+      "ARM",
+      "AZE"
+    ]
+  },
+  {
+    "name": "turkish_intervention_syria_euphrates_shield",
+    "outbreak_date": "2016-08-24",
+    "related_countries": [
+      "TUR",
+      "SYR"
+    ]
+  },
+  {
+    "name": "battle_of_mosul_isis",
+    "outbreak_date": "2016-10-16",
+    "related_countries": [
+      "IRQ",
+      "SYR",
+      "USA",
+      "TUR"
+    ]
+  },
+  {
+    "name": "marawi_crisis_2017",
+    "outbreak_date": "2017-05-23",
+    "related_countries": [
+      "PHL"
+    ]
+  },
+  {
+    "name": "armenia_azerbaijan_clashes_2018",
+    "outbreak_date": "2018-05-20",
+    "related_countries": [
+      "ARM",
+      "AZE"
+    ]
+  },
+  {
+    "name": "gaza_israel_clash_2018_nov",
+    "outbreak_date": "2018-11-11",
+    "related_countries": [
+      "ISR",
+      "PSE"
+    ]
+  },
+  {
+    "name": "india_pakistan_standoff_2019",
+    "outbreak_date": "2019-02-14",
+    "related_countries": [
+      "IND",
+      "PAK"
+    ]
+  },
+  {
+    "name": "gaza_israel_clash_2019_may",
+    "outbreak_date": "2019-05-03",
+    "related_countries": [
+      "ISR",
+      "PSE"
+    ]
+  },
+  {
+    "name": "turkish_intervention_syria_peace_spring",
+    "outbreak_date": "2019-10-09",
+    "related_countries": [
+      "TUR",
+      "SYR"
+    ]
+  },
+  {
+    "name": "usa_iran_crisis_soleimani",
+    "outbreak_date": "2020-01-03",
+    "related_countries": [
+      "USA",
+      "IRN",
+      "IRQ"
+    ]
+  },
+  {
+    "name": "china_india_border_clashes_2020",
+    "outbreak_date": "2020-05-05",
+    "related_countries": [
+      "CHN",
+      "IND"
+    ]
+  },
+  {
+    "name": "belarus_partisan_resistance",
+    "outbreak_date": "2020-08-09",
+    "related_countries": [
+      "BLR"
+    ]
+  },
+  {
+    "name": "western_togoland_insurgency",
+    "outbreak_date": "2020-09-25",
+    "related_countries": [
+      "GHA"
+    ]
+  },
+  {
+    "name": "second_nagorno_karabakh_war",
+    "outbreak_date": "2020-09-27",
+    "related_countries": [
+      "ARM",
+      "AZE"
+    ]
+  },
+  {
+    "name": "tigray_war",
+    "outbreak_date": "2020-11-03",
+    "related_countries": [
+      "ETH",
+      "ERI"
+    ]
+  },
+  {
+    "name": "western_sahara_conflict_resumes",
+    "outbreak_date": "2020-11-13",
+    "related_countries": [
+      "MAR",
+      "SAH"
+    ]
+  },
+  {
+    "name": "car_cpc_offensive",
+    "outbreak_date": "2020-12-19",
+    "related_countries": [
+      "CAF",
+      "RUS"
+    ]
+  },
+  {
+    "name": "myanmar_civil_war_new_phase",
+    "outbreak_date": "2021-02-01",
+    "related_countries": [
+      "MMR"
+    ]
+  },
+  {
+    "name": "kyrgyz_tajik_conflict_2021",
+    "outbreak_date": "2021-04-28",
+    "related_countries": [
+      "KGZ",
+      "TJK"
+    ]
+  },
+  {
+    "name": "israel_palestine_crisis_2021",
+    "outbreak_date": "2021-05-10",
+    "related_countries": [
+      "ISR",
+      "PSE"
+    ]
+  },
+  {
+    "name": "afghanistan_republican_insurgency",
+    "outbreak_date": "2021-08-17",
+    "related_countries": [
+      "AFG"
+    ]
+  },
+  {
+    "name": "russia_invasion_of_ukraine",
+    "outbreak_date": "2022-02-24",
+    "related_countries": [
+      "RUS",
+      "UKR"
+    ]
+  },
+  {
+    "name": "m23_campaign",
+    "outbreak_date": "2022-03-27",
+    "related_countries": [
+      "COD",
+      "RWA",
+      "UGA"
+    ]
+  },
+  {
+    "name": "al_shabaab_invasion_of_ethiopia",
+    "outbreak_date": "2022-07-20",
+    "related_countries": [
+      "SOM",
+      "ETH"
+    ]
+  },
+  {
+    "name": "north_kosovo_crisis",
+    "outbreak_date": "2022-07-31",
+    "related_countries": [
+      "SRB",
+      "XKX"
+    ]
+  },
+  {
+    "name": "gaza_israel_clash_2022",
+    "outbreak_date": "2022-08-05",
+    "related_countries": [
+      "ISR",
+      "PSE"
+    ]
+  },
+  {
+    "name": "armenia_azerbaijan_clashes_sep_2022",
+    "outbreak_date": "2022-09-12",
+    "related_countries": [
+      "ARM",
+      "AZE"
+    ]
+  },
+  {
+    "name": "kyrgyz_tajik_conflict_2022",
+    "outbreak_date": "2022-09-14",
+    "related_countries": [
+      "KGZ",
+      "TJK"
+    ]
+  },
+  {
+    "name": "las_anod_conflict",
+    "outbreak_date": "2023-02-06",
+    "related_countries": [
+      "SOM"
+    ]
+  },
+  {
+    "name": "sudan_civil_war",
+    "outbreak_date": "2023-04-15",
+    "related_countries": [
+      "SDN"
+    ]
+  },
+  {
+    "name": "niger_crisis_ecowas",
+    "outbreak_date": "2023-07-26",
+    "related_countries": [
+      "NER",
+      "NGA",
+      "BEN",
+      "BFA"
+    ]
+  },
+  {
+    "name": "amhara_war",
+    "outbreak_date": "2023-08-03",
+    "related_countries": [
+      "ETH"
+    ]
+  },
+  {
+    "name": "azerbaijani_offensive_nagorno_karabakh_2023",
+    "outbreak_date": "2023-09-19",
+    "related_countries": [
+      "AZE",
+      "ARM"
+    ]
+  },
+  {
+    "name": "gaza_war_2023",
+    "outbreak_date": "2023-10-07",
+    "related_countries": [
+      "ISR",
+      "PSE"
+    ]
+  },
+  {
+    "name": "israel_hezbollah_conflict_2023",
+    "outbreak_date": "2023-10-08",
+    "related_countries": [
+      "ISR",
+      "LBN"
+    ]
+  },
+  {
+    "name": "red_sea_crisis",
+    "outbreak_date": "2023-10-19",
+    "related_countries": [
+      "YEM",
+      "ISR",
+      "USA",
+      "GBR"
+    ]
+  },
+  {
+    "name": "ecuador_internal_conflict",
+    "outbreak_date": "2024-01-09",
+    "related_countries": [
+      "ECU"
+    ]
+  },
+  {
+    "name": "haiti_gang_war_escalation",
+    "outbreak_date": "2024-02-29",
+    "related_countries": [
+      "HTI"
+    ]
+  },
+  {
+    "name": "israel_iran_conflict_2024",
+    "outbreak_date": "2024-04-01",
+    "related_countries": [
+      "ISR",
+      "IRN"
+    ]
+  },
+  {
+    "name": "usa_venezuela_strikes_2026",
+    "outbreak_date": "2026-01-03",
+    "related_countries": [
+      "USA",
+      "VEN"
+    ]
+  },
+  {
+    "name": "usa_iran_war_2026",
+    "outbreak_date": "2026-02-28",
+    "related_countries": [
+      "USA",
+      "IRN",
+      "ISR"
+    ]
+  }
+]
