@@ -31,7 +31,16 @@
 - **有向圖（directed）**：保留 Actor1→Actor2 方向，反映「誰對誰做什麼」的單向性。
 - **同時產出三種時間粒度**：`daily`、`weekly`、`monthly`，可依分析需求切換。
 
-### 輸出檔案
+
+下載連結：
+daily:
+https://drive.google.com/file/d/1s7IlZA-pM-rEup84vYAfjI0HFqNJpIeS/view?usp=drive_link
+weekly:
+https://drive.google.com/file/d/1bYMcsUOFnu91IWna7DS6b6EdyU4FUuM7/view?usp=drive_link
+monthly:
+https://drive.google.com/file/d/1byxQ4iXu2CV67OG0pn2OHUrPfWVkXhJG/view?usp=drive_link
+
+### 讀取檔案
 
 處理後的 Parquet 檔案存放於data資料夾中
 讀取方式：
@@ -42,7 +51,6 @@ import pandas as pd
 df = pd.read_parquet("data/daily_country_relation_directed_base.parquet")
 df.head()
 ```
-
 
 ---
 
