@@ -49,7 +49,10 @@ def granger_test(y: pd.Series, x: pd.Series, max_lag: int = 12) -> dict:
     df = pd.concat([y, x], axis=1).dropna()
     df.columns = ['y', 'x']
 
-    if len(df) < max_lag + 5:
+    # statsmodels requires nobs > 3 * maxlag + 1, i.e. maxlag < (nobs-1)/3
+    effective_max_lag = min(max_lag, (len(df) - 2) // 3)
+
+    if effective_max_lag < 1 or len(df) < max_lag + 5:
         return {
             'p_values_per_lag': {},
             'best_lag': None,
@@ -59,12 +62,12 @@ def granger_test(y: pd.Series, x: pd.Series, max_lag: int = 12) -> dict:
 
     # statsmodels >=0.14 removed the verbose argument; older versions still need it.
     try:
-        raw = grangercausalitytests(df[['y', 'x']], maxlag=max_lag)
+        raw = grangercausalitytests(df[['y', 'x']], maxlag=effective_max_lag)
     except TypeError:
-        raw = grangercausalitytests(df[['y', 'x']], maxlag=max_lag, verbose=False)
+        raw = grangercausalitytests(df[['y', 'x']], maxlag=effective_max_lag, verbose=False)
 
     p_values = {}
-    for lag in range(1, max_lag + 1):
+    for lag in range(1, effective_max_lag + 1):
         p_values[lag] = float(raw[lag][0]['ssr_ftest'][1])
 
     best_lag = min(p_values, key=p_values.get)
