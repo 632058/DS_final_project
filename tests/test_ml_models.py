@@ -7,6 +7,8 @@ from src.ml_models import (
     evaluate,
     prepare_xy,
     time_train_test_split,
+    train_lasso,
+    train_xgboost,
 )
 
 
@@ -56,3 +58,70 @@ def test_evaluate_perfect_prediction():
     m = evaluate(y, y_hat)
     assert m['rmse'] == 0
     assert m['directional_accuracy'] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# train_lasso / train_xgboost
+# ---------------------------------------------------------------------------
+
+def _make_xy(n: int = 60):
+    rng = np.random.default_rng(42)
+    X = pd.DataFrame({
+        'f1': rng.standard_normal(n),
+        'f2': rng.standard_normal(n),
+        'f3': rng.standard_normal(n),
+    })
+    y = pd.Series(rng.standard_normal(n))
+    split = int(n * 0.8)
+    return X.iloc[:split].copy(), y.iloc[:split].copy(), X.iloc[split:].copy(), y.iloc[split:].copy()
+
+
+def test_train_lasso_returns_model_and_scaler():
+    X_tr, y_tr, _, _ = _make_xy()
+    model, scaler = train_lasso(X_tr, y_tr, alpha=1.0)
+    assert hasattr(model, 'predict')
+    assert hasattr(scaler, 'transform')
+
+
+def test_train_lasso_predict_shape():
+    X_tr, y_tr, X_te, _ = _make_xy()
+    model, scaler = train_lasso(X_tr, y_tr)
+    preds = model.predict(scaler.transform(X_te))
+    assert len(preds) == len(X_te)
+
+
+def test_train_lasso_scaler_fit_on_train_only():
+    X_tr, y_tr, X_te, _ = _make_xy()
+    model, scaler = train_lasso(X_tr, y_tr)
+    X_te_scaled = scaler.transform(X_te)
+    assert X_te_scaled.shape == X_te.shape
+
+
+def test_train_lasso_different_alpha_changes_coef():
+    X_tr, y_tr, _, _ = _make_xy()
+    model_loose, _ = train_lasso(X_tr, y_tr, alpha=0.001)
+    model_tight, _ = train_lasso(X_tr, y_tr, alpha=100.0)
+    assert not np.allclose(model_loose.coef_, model_tight.coef_)
+
+
+def test_train_xgboost_predict_shape():
+    X_tr, y_tr, X_te, _ = _make_xy()
+    model = train_xgboost(X_tr, y_tr, params={'n_estimators': 10, 'random_state': 42})
+    preds = model.predict(X_te)
+    assert len(preds) == len(X_te)
+
+
+def test_train_xgboost_returns_finite_predictions():
+    X_tr, y_tr, X_te, _ = _make_xy()
+    model = train_xgboost(X_tr, y_tr, params={'n_estimators': 10, 'random_state': 42})
+    preds = model.predict(X_te)
+    assert np.all(np.isfinite(preds))
+
+
+def test_train_xgboost_custom_params_applied():
+    import xgboost as xgb
+    X_tr, y_tr, _, _ = _make_xy()
+    model = train_xgboost(X_tr, y_tr, params={'n_estimators': 5, 'max_depth': 2, 'random_state': 0})
+    assert isinstance(model, xgb.XGBRegressor)
+    assert model.n_estimators == 5
+    assert model.max_depth == 2
