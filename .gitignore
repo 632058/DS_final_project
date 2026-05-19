@@ -1,23 +1,18 @@
-# Data and intermediate outputs (too large for git)
+# Raw data — too large, share via Drive
 data/*
-!data/.gitkeep
-output/*
-!output/.gitkeep
-!output/arimax_results/
-!output/ccf_granger/
-!output/ml_results/
-output/arimax_results/*
-!output/arimax_results/.gitkeep
-output/ccf_granger/*
-!output/ccf_granger/.gitkeep
-output/ml_results/*
-!output/ml_results/.gitkeep
-figures/*
-!figures/.gitkeep
+!data/conflict_events.json
+!data/data_explanation.md
+!data/country_weekly.parquet
 
-# Large database files
+# Output intermediate files — commit small parquet/json so cross-member
+# dependencies stay in sync. Ignore only files known to be too large.
+output/**/raw_*.parquet
+output/**/*_large.parquet
+
+# Figures — commit (small enough, helps PR review and report integration)
+
+# Large database files anywhere
 *.duckdb
-*.parquet
 
 # Python
 __pycache__/

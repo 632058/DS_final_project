@@ -6,15 +6,15 @@ this script aggregates it to (country, week_start) with the same schema that
 src/feature_engineering.py expects.
 
 Run: python scripts/01b_build_country_weekly_from_parquet.py
-Output: output/country_weekly.parquet
+Output: data/country_weekly.parquet
 """
 from __future__ import annotations
 
 import pandas as pd
 
-from src.constants import OUTPUT_DIR
+from src.constants import DATA_DIR
 
-DATA_PATH = "data/weekly_country_relation_directed_base.parquet"
+DATA_PATH = DATA_DIR / "weekly_country_relation_directed_base.parquet"
 
 # ISO-3 → FIPS 10-4 mapping for the 5 target countries
 ISO_TO_FIPS = {
@@ -78,8 +78,8 @@ def main() -> None:
     agg = agg.fillna(0).reset_index()
     agg = agg.sort_values(['country', 'week_start']).reset_index(drop=True)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = OUTPUT_DIR / "country_weekly.parquet"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = DATA_DIR / "country_weekly.parquet"
     agg.to_parquet(out_path, index=False)
 
     print(f"Wrote {out_path}: shape={agg.shape}")
