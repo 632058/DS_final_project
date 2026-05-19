@@ -3,6 +3,7 @@ data/*
 !data/conflict_events.json
 !data/data_explanation.md
 !data/country_weekly.parquet
+!data/country_eventmix_weekly.parquet
 
 # Output intermediate files — commit small parquet/json so cross-member
 # dependencies stay in sync. Ignore only files known to be too large.
