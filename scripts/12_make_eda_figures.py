@@ -42,6 +42,20 @@ def make_fig1(df) -> None:
     plt.close(fig)
 
 
+def _yearly_ticks(columns) -> tuple[list[int], list[str]]:
+    """Pick one tick per year — the first column whose date falls in that year."""
+    seen_years: set[int] = set()
+    tick_idx: list[int] = []
+    tick_labels: list[str] = []
+    for i, ts in enumerate(columns):
+        year = ts.year
+        if year not in seen_years:
+            seen_years.add(year)
+            tick_idx.append(i)
+            tick_labels.append(str(year))
+    return tick_idx, tick_labels
+
+
 def make_fig2(df) -> None:
     tone_pivot = df.pivot(index='country', columns='week_start',
                           values='avg_tone').reindex(FIPS_COUNTRIES)
@@ -49,29 +63,22 @@ def make_fig2(df) -> None:
                           values='avg_goldstein').reindex(FIPS_COUNTRIES)
 
     fig, axes = plt.subplots(2, 1, figsize=(16, 6))
-    n = tone_pivot.shape[1]
-    tick_idx = list(range(0, n, max(1, n // 20)))
+    tick_idx, tick_labels = _yearly_ticks(tone_pivot.columns)
 
     sns.heatmap(tone_pivot, cmap='RdBu_r', center=0, vmin=-5, vmax=5,
                 cbar_kws={'label': 'Avg Tone'}, ax=axes[0])
     axes[0].set_title('Avg Tone Over Time (per country)')
     axes[0].set_xlabel('')
     axes[0].set_xticks(tick_idx)
-    axes[0].set_xticklabels(
-        [str(tone_pivot.columns[i])[:10] for i in tick_idx],
-        rotation=45, ha='right',
-    )
+    axes[0].set_xticklabels(tick_labels, rotation=0, ha='center')
     axes[0].set_yticklabels([COUNTRY_NAMES[c] for c in tone_pivot.index], rotation=0)
 
     sns.heatmap(gold_pivot, cmap='RdBu_r', center=0, vmin=-5, vmax=5,
                 cbar_kws={'label': 'Goldstein'}, ax=axes[1])
     axes[1].set_title('Avg Goldstein Over Time (per country)')
-    axes[1].set_xlabel('Week')
+    axes[1].set_xlabel('Year')
     axes[1].set_xticks(tick_idx)
-    axes[1].set_xticklabels(
-        [str(gold_pivot.columns[i])[:10] for i in tick_idx],
-        rotation=45, ha='right',
-    )
+    axes[1].set_xticklabels(tick_labels, rotation=0, ha='center')
     axes[1].set_yticklabels([COUNTRY_NAMES[c] for c in gold_pivot.index], rotation=0)
 
     plt.tight_layout()
