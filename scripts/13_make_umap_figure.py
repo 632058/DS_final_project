@@ -20,7 +20,7 @@ def main() -> None:
     ratio_cols = [c for c in df.columns if c.startswith('ratio_')]
     X = df[ratio_cols].fillna(0).values
 
-    reducer = umap.UMAP(n_neighbors=30, min_dist=0.3, random_state=42)
+    reducer = umap.UMAP(n_neighbors=50, min_dist=0.5, random_state=42)
     embedding = reducer.fit_transform(X)
 
     df_plot = df[['country', 'week_start']].copy()
