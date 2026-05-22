@@ -47,6 +47,7 @@ def build_feature_matrix(df_weekly: pd.DataFrame) -> pd.DataFrame:
     df = add_rolling_features(df)
     df = add_lag_features(df)
     df = add_diff_features(df)
+    df = add_v2_features(df)
     df = add_country_one_hot(df)
     return df
 
@@ -136,6 +137,36 @@ def add_diff_features(df: pd.DataFrame) -> pd.DataFrame:
         df[f'{col}_pct_change_4w'] = df[f'{col}_pct_change_4w'].replace(
             [np.inf, -np.inf], np.nan
         )
+    return df
+
+
+def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add v2 features suggested by E after Lasso baseline review.
+
+    1. tone_goldstein_inter: avg_tone × avg_goldstein
+       Captures joint signal of media negativity and conflict severity.
+
+    2. Conflict ratio features: count / n_events
+       Normalises by total event volume to remove news-cycle noise.
+
+    3. Seasonal features: week_of_year, month
+       Captures seasonal protest patterns.
+    """
+    df = df.copy()
+
+    # 1. Interaction term
+    df['tone_goldstein_inter'] = df['avg_tone'] * df['avg_goldstein']
+
+    # 2. Conflict ratios (avoid divide-by-zero)
+    n = df['n_events'].replace(0, np.nan)
+    df['material_conf_ratio'] = df['n_material_conf'] / n
+    df['verbal_conf_ratio']   = df['n_verbal_conf']   / n
+    df['protest_ratio']       = df['protest_count']   / n
+
+    # 3. Seasonal features
+    df['week_of_year'] = df['week_start'].dt.isocalendar().week.astype(int)
+    df['month']        = df['week_start'].dt.month
+
     return df
 
 
