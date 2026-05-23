@@ -1,151 +1,133 @@
 # Issue Board — Member E (ML)
 
 > Owner: Member E（曾弘舟）
-> Status snapshot: 2026-05-23
-> Scope: `scripts/09_train_lasso.py`, `scripts/10_train_xgboost.py`, `scripts/11_compute_shap.py`, `output/ml_results/*`
+> Status snapshot: 2026-05-23（updated after Issue #1 fix + data-path fix）
+> Scope: `scripts/09_train_lasso.py`, `scripts/10_train_xgboost.py`, `scripts/10b_collate_model_comparison.py`, `scripts/11_compute_shap.py`, `output/ml_results/*`
 
-下列三項是目前 ML 結果在進到 `report/ml.md` 之前必須處理的問題。
+## 進度總覽
+
+| Issue | Status | 重點 |
+|---|---|---|
+| #1 `model_comparison.parquet` 對不上 | ✅ Resolved | 改成由 `scripts/10b_collate_model_comparison.py` 自動由 lasso/xgb metrics 拼出。 |
+| #2 XGBoost 整體 RMSE 比 Lasso 還差 | ✅ Largely resolved | data path bug 修掉後 XGBoost RMSE 13.24 ≈ Lasso 12.48；MAE 上 XGBoost 反贏。 |
+| #3 LE over-predict / TU under-predict | 🟡 Partial | LE 改善 62.7%（RMSE 45.65 → 17.03）；TU 幾乎沒變（22.62 → 22.87），Imamoglu 結構性衝擊仍是主要殘留問題。原本「scope mismatch」假設**錯誤**，真正原因是 stale data + 不同國家事件聚合口徑。 |
+
+下面三項是原始 issue 紀錄與後續更新。
 
 ---
 
 ## Issue #1 — `model_comparison.parquet` 與 `xgboost_metrics.parquet` 數字對不上
 
 **Severity**: 嚴重 / 必修
-**Status**: Open
+**Status**: ✅ Resolved（2026-05-23）
 
-### 敘述
+### 修法
 
-`output/ml_results/` 底下兩個檔案對 XGBoost 報出來的指標完全不一致：
+採用方案 A：新增 `scripts/10b_collate_model_comparison.py`，每次 build 自動從 `xgboost_metrics.parquet` + `lasso_metrics.parquet` 拼出 `model_comparison.parquet`，single source of truth。下次 build 流程：
 
-| 來源檔案 | RMSE | MAE | Directional Accuracy |
-|---|---|---|---|
-| `xgboost_metrics.parquet`（由 `scripts/10_train_xgboost.py` 自動產出） | **23.05** | 9.19 | 64.8% |
-| `model_comparison.parquet`（沒有任何 script 產生它） | **27.51** | 10.50 | 62.8% |
+```bash
+python scripts/09_train_lasso.py
+python scripts/10_train_xgboost.py
+python scripts/10b_collate_model_comparison.py   # 一定要最後跑
+```
 
-`xgboost_metrics.parquet` 同時也被 `scripts/15_make_ml_diagnostic_figures.py` 拿來當 Fig 5 標題的數值來源，所以圖上是 RMSE=23.05；但若報告引用 `model_comparison.parquet`，就會出現「圖上 23.05、表格 27.51」的對不上現象。
+### 原始敘述（保留）
 
-### 可能原因
-
-1. **最可能**：`model_comparison.parquet` 是當初手動建立的，commit `60aa1fb`（你把 XGBoost 從 `max_depth=6` 改成 `max_depth=3`、`learning_rate=0.03`）之後沒有重新產生，記錄的是舊版超參數的結果。
-2. **次要**：兩個檔案 mtime 完全相同（都是 1779523162），但內容不一致 — 可能是 `model_comparison.parquet` 在某次 IDE / Jupyter 互動式階段被覆寫，但和 `10_train_xgboost.py` 用的不是同一個 model 物件。
-3. **不可能但要排除**：兩支 script 都沒有控制 `random_state`，理論上不會出現這種大幅落差，但建議跑一次 `cat scripts/10_train_xgboost.py | grep random_state` 確認確實設定為 42。
-
-### 建議修法
-
-- **方案 A（推薦）**：刪掉 `model_comparison.parquet`，另寫 `scripts/10b_collate_model_comparison.py`，每次 build 自動讀 `xgboost_metrics.parquet` + `lasso_metrics.parquet` 拼起來。這樣 single source of truth。
-- **方案 B**：把 `10_train_xgboost.py` 結尾改成同時更新 `model_comparison.parquet`（讀 lasso_metrics、append xgb、寫回去）。
+`output/ml_results/` 底下兩個檔案對 XGBoost 報出來的指標不一致：`xgboost_metrics.parquet` 是 script 自動產出（commit `60aa1fb` 改超參後重產），`model_comparison.parquet` 是更早手動建立的舊版超參結果，沒人重產。`scripts/15_make_ml_diagnostic_figures.py` 用的是 `xgboost_metrics.parquet`，所以圖跟表會對不上。
 
 ---
 
 ## Issue #2 — XGBoost 整體 RMSE 比 Lasso 還差
 
-**Severity**: 嚴重 / 必須在 report 解釋
-**Status**: Open（需要文字 + 可能需要 robustness check）
+**Severity**: 原本「嚴重 / 必須在 report 解釋」
+**Status**: ✅ Largely resolved（2026-05-23，由 data-path fix 順帶解決）
 
-### 敘述
+### 後續發現
 
-目前的整體比較（以 `xgboost_metrics.parquet` 與 `lasso_metrics.parquet` 為準）：
+問題並非模型本身有缺陷，而是 **data path bug** —— `src/data_loader.load_country_weekly()` 原本讀 `data/country_weekly.parquet`（5/19 由 `01b_build_country_weekly_from_parquet.py` 用 `country_1 = target country` 聚合），但 Member A 在 5/21 重寫的 `01_build_country_weekly.py` 改用 `ActionGeo_CountryCode = target country` 聚合並寫到 `output/country_weekly.parquet`。整條 feature → ML pipeline 一直用舊聚合版本。
+
+### Path fix 後（target 顯式設為 `protest_count_all`）的新指標
 
 | Model | RMSE | MAE | Directional Accuracy |
 |---|---|---|---|
-| **Lasso (alpha=1.0)** | **12.93** | **7.25** | 60.6% |
-| **XGBoost** (depth=3, lr=0.03, n=300) | 23.05 | 9.19 | **64.8%** |
+| Lasso (alpha=1.0) | **12.48** | 6.88 | 64.2% |
+| XGBoost (depth=3, lr=0.03, n=300) | 13.24 | **6.84** | **65.5%** |
 
-兩個指標互相矛盾：
-- 量級指標（RMSE、MAE）：Lasso 大贏
-- 方向指標（Directional Accuracy）：XGBoost 大贏
+兩個模型差距已經很小：RMSE 上 Lasso 微贏 0.76，MAE 上 XGBoost 微贏，Dir Acc 上 XGBoost 微贏。原本「Lasso 大贏 XGBoost」的命題不成立。
 
-如果 report 直接寫「Lasso 比 XGBoost 好」會誤導讀者，因為這不是模型容量不足，而是兩個模型有不同的失敗模式。
+### Report 寫法建議
 
-### 可能原因
-
-1. **最主要**：Lasso 因為 L1 正則化把多數係數壓縮接近 0，預測會偏保守、貼近樣本均值。在 protest_count 大多時間很低（每週個位數）但偶爾爆衝（黎以衝突、Imamoglu 事件）的長尾分布下，這種「保守預測」剛好避開了少數極端事件帶來的大誤差，所以 RMSE 看起來漂亮。
-2. **XGBoost 反方向問題**：XGBoost 嘗試擬合「衝突訊號上升 → protest 上升」這個關係，但量級錯誤（見 Issue #3），少數樣本誤差被 RMSE 平方放大，整體 RMSE 被拉高。
-3. **次要**：可能 Lasso 在標準化後對 multicollinearity（rolling × lag × diff 之間互相相關）處理得比較乾淨；XGBoost 對相關特徵會分散權重，反而在小樣本上不穩定（每國 ~470 train rows）。
-4. **要排除**：請確認 `09_train_lasso.py` 跟 `10_train_xgboost.py` 用的是**完全一樣**的 `time_train_test_split`（同一份 `feature_matrix.parquet`、同樣 80/20 切點），否則上面這張比較表沒有意義。
-
-### 建議在 report 的寫法（草稿）
-
-> 在整體 RMSE 上，Lasso（12.93）優於 XGBoost（23.05），但這並非代表 Lasso 是更好的模型。Lasso 受 L1 收斂壓力影響，預測量級保守地往樣本均值靠攏；在 protest_count 呈現偶發性爆衝的長尾分布下，此「保守偏差」剛好避開了少數結構性事件所造成的大量誤差。相對地，XGBoost 雖然嘗試擬合衝突結構與抗議規模間的非線性關係，但因為對 Lebanon 與 Turkey 等具結構性斷裂的時期估計量級錯誤（見 Issue #3），被少數樣本拉高 RMSE。Directional Accuracy 上 XGBoost（64.8%）仍勝出，顯示其在「趨勢方向」上更可靠。實務上，這建議以 Lasso 作為短期 baseline、XGBoost 作為趨勢偵測模型，搭配使用。
-
-### 建議行動
-
-- [ ] 在 `report/ml.md` 寫出「為什麼 Lasso 看起來贏」的解釋（草稿如上）
-- [ ] 加一個 robustness check：對 y 取 log1p 後再跑兩個模型比較 — 如果 log scale 下 XGBoost 反超 Lasso，就證實了上面的「長尾被 RMSE 懲罰」假設
+> XGBoost 與 Lasso 在 hold-out 測試集上表現非常接近（RMSE 13.24 vs 12.48；MAE 6.84 vs 6.88；Directional Accuracy 65.5% vs 64.2%）。Lasso 在 RMSE 上略勝，XGBoost 在 MAE 與方向預測上略勝。兩者實質效力相當，可視為互補：Lasso 提供穩定的線性基準與可解釋係數，XGBoost 捕捉非線性互動與趨勢方向。
 
 ---
 
 ## Issue #3 — XGBoost 對 Lebanon 系統性 over-predict、對 Turkey 系統性 under-predict
 
 **Severity**: 核心發現 / 必寫進 report
-**Status**: Open（已用 Fig 5/6 視覺化，等文字解讀）
+**Status**: 🟡 Partial — LE 大幅收斂、TU 仍開放
 
-### 敘述
+### 原始假設（已證偽）
 
-Per-country test-set 指標（從 `xgboost_predictions.parquet` 重新拆解）：
+原本診斷為「target/feature 口徑不一致」（`protest_count` 限定 `country_1 == country_2`、其它特徵不限）。實際盤點後：
 
-| 國家 | n_test | RMSE | MAE | actual_max | predicted_max | 狀態 |
-|---|---|---|---|---|---|---|
-| Argentina (AR) | 112 | **4.65** | 3.04 | 31 | 19.7 | ✅ 正常 |
-| Sri Lanka (CE) | 112 | **4.86** | 3.72 | 23 | 11.0 | ✅ 正常 |
-| Chile (CI) | 112 | **3.91** | 2.90 | 20 | 16.9 | ✅ 正常 |
-| Turkey (TU) | 112 | **22.62** | 12.21 | 197 | 60.4 | ⚠️ structural break under-predict |
-| **Lebanon (LE)** | 112 | **45.65** | 24.06 | 64 | **220.9** | ❌ 系統性 over-predict |
+- `data/country_weekly.parquet`（pipeline 在讀的舊檔）的 `protest_count` 是 01b 用 `country_1 = target` 聚合，**並非** domestic-only
+- `output/country_weekly.parquet`（新檔）才有真正 domestic-only 的 `protest_count` 跟全事件的 `protest_count_all`
+- 修 path bug 之前，features 跟 target 其實**都是**「country 為事件來源」這個 scope，沒有口徑不一致
 
-整體 RMSE 23.05 幾乎全部由 LE + TU 兩國貢獻；AR/CE/CI 三國的模型其實表現得相當乾淨（RMSE 4-5）。
+所以「scope mismatch」這個 hypothesis 在事實面是錯的。
 
-最嚴重的 5 個誤差：
+### Path fix 後的 per-country test 指標
+
+| 國家 | OLD RMSE | NEW RMSE | OLD pred_max | NEW pred_max | 狀態 |
+|---|---|---|---|---|---|
+| Argentina (AR) | 4.65 | 4.72 | 19.7 | 21.3 | ✅ 正常 |
+| Sri Lanka (CE) | 4.86 | 5.11 | 11.0 | 12.1 | ✅ 正常 |
+| Chile (CI) | 3.91 | 3.79 | 16.9 | 19.5 | ✅ 正常 |
+| **Lebanon (LE)** | **45.65 → 17.03** | (↓ 62.7%) | **220.9 → 85.6** | | 🟡 殘留 over-predict 但量級大幅縮小 |
+| **Turkey (TU)** | 22.62 | 22.87 | 60.4 | 61.5 | ❌ 幾乎沒變，Imamoglu 衝擊仍主導 |
+
+LE 的進步來自於新聚合口徑（`ActionGeo` vs `country_1`）— 以黎衝突期間大量事件 `country_1 = 以色列`、`ActionGeo = LE`，新口徑把這些事件正確算入 LE 的脈絡，模型不再用「LE 是主動方」的偏狹視角去學。
+
+### Path fix 後最嚴重 5 個殘差
 
 | 國家 | 週次 | actual | predicted | 誤差 | 對應實際事件 |
 |---|---|---|---|---|---|
-| LE | 2024-11-25 | 22 | 220.9 | +198.9 | 黎以衝突升級期 |
-| LE | 2024-09-30 | 38 | 209.0 | +170.9 | 同上 |
-| **TU** | **2025-03-17** | **197** | **32.8** | **-164.2** | **Imamoglu 被捕大規模抗議** |
-| LE | 2024-10-07 | 21 | 181.4 | +160.4 | 以色列入侵黎南 |
-| LE | 2024-10-28 | 9 | 169.4 | +160.4 | 同上 |
+| **TU** | 2025-03-17 | **197** | 34.0 | **−163.0** | Imamoglu 被捕大規模抗議 |
+| TU | 2025-03-10 | 99 | 10.8 | −88.2 | Imamoglu 前一週 |
+| LE | 2026-03-02 | 14 | 85.6 | +71.6 | 殘留 over-predict |
+| TU | 2025-09-22 | 69 | 13.1 | −55.9 | TU 後續事件 |
+| LE | 2024-11-25 | 22 | 77.0 | +55.0 | 黎以衝突期殘留 |
 
-新版 `figures/fig5_pred_vs_actual.png`、`figures/fig6_residual_plot.png` 已用 country 顏色重新繪製，紫色（LE）與橙色（TU）的異質性一眼可見。
+### 殘留問題的假設
 
-### 可能原因
+#### A. LE 還是有 over-predict（量級小很多）
 
-#### A. Lebanon over-prediction 的可能原因
+1. **可能 — `tone_goldstein_inter` 在極端值放大訊號**：B 在 commit `02897c9` 加入這個交互特徵，對「tone 負 × goldstein 負」極端組合敏感；2024 黎以衝突期、2026-03 都是兩者極端負，可能仍被放大。
+2. **可能 — Lag features 撞訓練分布外推極限**：12 週 lag + 4/8/12 週 rolling 在衝突高峰期全部 saturate，模型只能往上推。
 
-1. **最可能 — Target / Feature 口徑不一致**：根據 `docs/summary_D.md`：
-   - `protest_count` = 限定 `country_1 == country_2`（**只算國內抗議**）
-   - `avg_tone`、`avg_goldstein`、`n_material_conf` = **不限國內**
+#### B. TU under-predict（沒改善）
 
-   2024 年 9-11 月黎以衝突期間，goldstein 與 material_conf 因為跨國衝突暴衝；XGBoost 看到「衝突結構訊號 = 高」就推論「protest_count 應該也高」，但實際 protest_count 屬於國內抗議，並沒有跟著漲。
-
-2. **次要 — 訓練集沒看過類似情境**：train 區間是 2015-02 到 2024-01（左右 80%），LE 在 train 期間沒有同等規模的跨境戰爭 → 模型沒學過「外部衝突 ≠ 國內 protest」的解耦關係。
-
-3. **可能但要驗證 — Feature interaction `tone_goldstein_inter`**：B 在 commit `02897c9` 加入這個交互特徵後，可能放大了「tone 負 × goldstein 負」的訊號強度，對 LE 這種兩個都極端的情境特別敏感。
-
-#### B. Turkey under-prediction 的可能原因
-
-1. **最可能 — Structural break 不在 train 分布內**：Imamoglu 被捕（2025-03-19）是政治事件，本身是「衝擊」而非衝突訊號的延續累積。Train 期間 TU 的 protest_count 範圍大約是 0-50，模型上限被截斷，無法外推到 actual=197 的等級。
-2. **次要 — Lag 訊號被平滑化**：模型用的是 lag 1-12 週與 rolling 4/8/12 週的特徵，這些對「瞬間爆發」的政治抗議反應較慢；當 lag 1 還沒看到 protest 訊號時，模型只能依賴 tone / goldstein，但這類政治事件不一定有顯著的事前媒體訊號累積。
-3. **要排除 — 是不是只有 lag1 在訓練時被 leak**：請確認 `add_target` + `prepare_xy` 的 lag 處理是否完全不會洩漏未來資訊（特別是 `protest_count` 自身的 lag），這在 time-series ML 是最常見的 bug 來源。
-
-### 建議在 report 的寫法（草稿）
-
-> 將測試集 RMSE 拆解到各國後可以看見一個明顯的異質性：阿根廷、智利、斯里蘭卡三國的 RMSE 皆在 4-5 之間，但黎巴嫩高達 45.7、土耳其 22.6。整體 RMSE 23.05 幾乎全部由這兩個國家貢獻。
->
-> 黎巴嫩的偏誤呈現系統性的 over-prediction：2024 年 9-11 月黎以衝突升級期間，模型多次將週抗議數估計到 150-220，但實際國內抗議事件僅為 9-38。這反映了本研究的一個資料口徑張力 — 目標變數 `protest_count` 限定於國內抗議（country_1 == country_2），但衝突結構特徵 `avg_goldstein`、`n_material_conf` 並未限定國內。當跨國武裝衝突大幅推升衝突結構訊號時，XGBoost 將之誤解讀為國內動員訊號。
->
-> 土耳其則呈現相反方向的偏誤：2025 年 3 月伊斯坦堡市長 Imamoglu 被捕後，單週抗議數達 197，但模型僅預測 33。這類因突發政治事件導致的 structural break 不在訓練分布範圍內，且 lag / rolling 特徵對瞬時衝擊反應較慢，模型結構上難以外推。
->
-> 兩種偏誤揭示了基於媒體訊號的抗議預測模型的本質限制：模型可以捕捉「衝突結構持續惡化 → 抗議逐步累積」的因果鏈，但對「跨境戰爭引發的訊號污染」與「政治衝擊型 structural break」皆缺乏外推能力。
+1. **最主要 — Structural break 不在 train 分布內**：Imamoglu 被捕（2025-03-19）是政治衝擊事件，本身是「shock」而非衝突訊號累積。Train 期間 TU 的 protest 量級被截斷在較低範圍，模型上限被限制，無法外推到 actual=197 的等級。
+2. **次要 — Lag 訊號被平滑化**：lag 1-12 週與 rolling 4/8/12 週對「瞬間爆發」的政治抗議反應較慢；當 lag 1 還沒看到 protest 訊號時，模型只能依賴 tone / goldstein，但這類政治事件不一定有顯著的事前媒體訊號累積。
 
 ### 建議行動
 
-- [ ] **Robustness check（高優先）**：用 `protest_count_all`（不限 country_1==country_2）當 target 重跑 XGBoost。若 LE 的 RMSE 明顯下降，就證實「target/feature 口徑不一致」是主因，可在 report 直接引用。
-- [ ] **可選**：在 train/test split 之外，再做一次 **leave-one-country-out** 驗證，看看模型對 LE / TU 是不是即使在 train 看過也學不起來。
-- [ ] 在 `report/ml.md` 寫出上述偏誤解釋（草稿如上）並引用新版 Fig 5/6。
+- [ ] **Regime check（高優先）**：對 LE / TU 看 train vs test 期間 `n_material_conf`、`goldstein` 等關鍵特徵的分布，特別是 test 期極端值是否超出 train 的 max。若超出，就確認「extrapolation beyond training distribution」是主因。
+- [ ] **SHAP 拆解最嚴重 5 個殘差**：用現有 `shap_values.npy` 抽出 TU 那 2 列、LE 那 2 列，看哪些 feature 在貢獻。如果 `tone_goldstein_inter` 或 `n_material_conf_lag*` 佔主導 → 證實假設。
+- [ ] **Report 寫法**：把 TU Imamoglu 案例當成 media-signal-based 抗議預測模型的**本質限制**寫出來 — 模型可以捕捉「衝突結構持續惡化 → 抗議逐步累積」的因果鏈，但對「政治衝擊型 structural break」缺乏外推能力。
+
+### Report 寫法（草稿，已更新數字）
+
+> 將測試集 RMSE 拆解到各國後可以看見一個明顯的異質性：阿根廷、智利、斯里蘭卡三國的 RMSE 皆在 4-5 之間，黎巴嫩 17.0，土耳其 22.9。整體 RMSE 13.2 的主要殘留來自土耳其單一事件 — 2025 年 3 月伊斯坦堡市長 Imamoglu 被捕後的單週抗議數達 197，但模型僅預測 34。這類因突發政治事件導致的 structural break 不在訓練分布範圍內，且 lag / rolling 特徵對瞬時衝擊反應較慢，模型結構上難以外推。
+>
+> 黎巴嫩在 2024 年 9-11 月黎以衝突升級期間仍呈現殘留的 over-prediction（誤差 50-70），但相較於原始 pipeline（最大誤差 +198）已大幅收斂。改善來源是 GDELT 事件的「行為發生地」聚合口徑（`ActionGeo_CountryCode`）取代「主動方國家」（`country_1`），使得跨境衝突事件能正確歸入黎巴嫩脈絡而非以色列脈絡。
 
 ---
 
-## 建議 commit message
+## 建議 commit messages
 
 ```
-docs: add issue board for ML pipeline (model comparison, RMSE inversion, per-country bias)
+feat: add 10b_collate_model_comparison.py to unify ML metrics source of truth
+fix: load_country_weekly reads OUTPUT_DIR; use protest_count_all as ML target
+docs: update issues_E.md with Issue #1/#2 resolution and Issue #3 reframe
 ```
