@@ -10,7 +10,7 @@
 |---|---|---|
 | #1 `model_comparison.parquet` 對不上 | ✅ Resolved | 改成由 `scripts/10b_collate_model_comparison.py` 自動由 lasso/xgb metrics 拼出。 |
 | #2 XGBoost 整體 RMSE 比 Lasso 還差 | ✅ Largely resolved | data path bug 修掉後 XGBoost RMSE 13.24 ≈ Lasso 12.48；MAE 上 XGBoost 反贏。 |
-| #3 LE over-predict / TU under-predict | 🟡 Partial | LE 改善 62.7%（RMSE 45.65 → 17.03）；TU 幾乎沒變（22.62 → 22.87），Imamoglu 結構性衝擊仍是主要殘留問題。原本「scope mismatch」假設**錯誤**，真正原因是 stale data + 不同國家事件聚合口徑。 |
+| #3 LE over-predict / TU under-predict | 🟡 Partial | LE 改善 62.7%（RMSE 45.65 → 17.03）；TU 幾乎沒變（22.62 → 22.87）。Task #3 regime+SHAP 診斷：LE 是 OOD 外推、TU 是模型結構缺 protest 自迴歸特徵（90 個特徵裡完全沒有 `protest_count_*_lag*`，但實測 lag-1 自相關 0.53）。修法：補上 protest_count_all 系列 lag/rolling 特徵。 |
 
 下面三項是原始 issue 紀錄與後續更新。
 
@@ -98,29 +98,106 @@ LE 的進步來自於新聚合口徑（`ActionGeo` vs `country_1`）— 以黎�
 | TU | 2025-09-22 | 69 | 13.1 | −55.9 | TU 後續事件 |
 | LE | 2024-11-25 | 22 | 77.0 | +55.0 | 黎以衝突期殘留 |
 
-### 殘留問題的假設
+### Task #3 診斷結果（2026-05-23）：regime check + SHAP
 
-#### A. LE 還是有 over-predict（量級小很多）
+#### Regime check — LE 與 TU 的本質完全不同
 
-1. **可能 — `tone_goldstein_inter` 在極端值放大訊號**：B 在 commit `02897c9` 加入這個交互特徵，對「tone 負 × goldstein 負」極端組合敏感；2024 黎以衝突期、2026-03 都是兩者極端負，可能仍被放大。
-2. **可能 — Lag features 撞訓練分布外推極限**：12 週 lag + 4/8/12 週 rolling 在衝突高峰期全部 saturate，模型只能往上推。
+| 特徵 | TU train_max | TU test_max | TU OOD? | LE train_max | LE test_max | LE OOD? |
+|---|---|---|---|---|---|---|
+| `n_material_conf` | 6622 | 784 | ❌ | 1427 | **3630** | ✅ |
+| `n_material_conf_rolling_mean_4w` | 4000 | 497 | ❌ | 1098 | **2578** | ✅ |
+| `n_material_conf_lag1` | 6622 | 784 | ❌ | 1427 | **3630** | ✅ |
+| `tone_goldstein_inter` | 8.38 | 2.19 | ❌ | 21.78 | **25.40** | ✅ |
+| `n_verbal_conf` | 3885 | 634 | ❌ | 1083 | **1593** | ✅ |
+| `material_conf_ratio` | 0.33 | 0.24 | ❌ | 0.39 | **0.48** | ✅ |
 
-#### B. TU under-predict（沒改善）
+**結論**：
+- **LE 是真正的 OOD 外推問題**：2024-09 之後黎以衝突的衝突訊號全面超出 train 期間 max（2-3 倍）。樹模型對未見過的範圍只能用最後一個 split threshold 對應的葉節點推論 → 系統性 over-predict。
+- **TU 並非 OOD 問題**：所有 test features 都在 train 範圍內（甚至遠遠低於 train max，因為 2024 年之前的 TU 衝突活動更大）。**Imamoglu 預測失準不是「沒見過這個訊號量級」**。
 
-1. **最主要 — Structural break 不在 train 分布內**：Imamoglu 被捕（2025-03-19）是政治衝擊事件，本身是「shock」而非衝突訊號累積。Train 期間 TU 的 protest 量級被截斷在較低範圍，模型上限被限制，無法外推到 actual=197 的等級。
-2. **次要 — Lag 訊號被平滑化**：lag 1-12 週與 rolling 4/8/12 週對「瞬間爆發」的政治抗議反應較慢；當 lag 1 還沒看到 protest 訊號時，模型只能依賴 tone / goldstein，但這類政治事件不一定有顯著的事前媒體訊號累積。
+#### SHAP 證據 — TU 的真正瓶頸
 
-### 建議行動
+| 殘差列 | 第一名 SHAP 特徵 | 值 | SHAP | 解讀 |
+|---|---|---|---|---|
+| TU 2025-03-17 (err=+163) | `protest_ratio` | 0.041 | **+14.2** | 模型唯一抓到的訊號是「當週 protest 比率已升高」，但只貢獻 +14 → 模型沒辦法把這個訊號放大 |
+| TU 2025-03-10 (err=+88) | `protest_ratio` | 0.004 | −2.3 | 預測下週 protest=99，但當週 protest 還沒發生 → 零訊號可用 |
+| LE 2026-03-02 (err=−72) | `n_material_conf_diff_1w` | 1437 (OOD) | **+34.3** | 訓練從未看過這麼大的 diff，樹外推到 +34 |
+| LE 2024-11-25 (err=−55) | `n_verbal_conf` | 846 (OOD) | +10.5 | 同上，n_material_conf_lag10=1584 也是 OOD |
 
-- [ ] **Regime check（高優先）**：對 LE / TU 看 train vs test 期間 `n_material_conf`、`goldstein` 等關鍵特徵的分布，特別是 test 期極端值是否超出 train 的 max。若超出，就確認「extrapolation beyond training distribution」是主因。
-- [ ] **SHAP 拆解最嚴重 5 個殘差**：用現有 `shap_values.npy` 抽出 TU 那 2 列、LE 那 2 列，看哪些 feature 在貢獻。如果 `tone_goldstein_inter` 或 `n_material_conf_lag*` 佔主導 → 證實假設。
-- [ ] **Report 寫法**：把 TU Imamoglu 案例當成 media-signal-based 抗議預測模型的**本質限制**寫出來 — 模型可以捕捉「衝突結構持續惡化 → 抗議逐步累積」的因果鏈，但對「政治衝擊型 structural break」缺乏外推能力。
+**最關鍵發現** — 整份 feature_matrix 的 90 個欄位裡，**完全沒有 `protest_count_*_lag*` 或 `protest_ratio_lag*` 特徵**。lag features 只覆蓋 `avg_tone`、`avg_goldstein`、`n_material_conf`。
 
-### Report 寫法（草稿，已更新數字）
+但實測 TU train 期間 `protest_count_all` 的 lag-1 自相關 = **0.531**（強訊號）。模型對抗議的自迴歸訊號是完全瞎的。
 
-> 將測試集 RMSE 拆解到各國後可以看見一個明顯的異質性：阿根廷、智利、斯里蘭卡三國的 RMSE 皆在 4-5 之間，黎巴嫩 17.0，土耳其 22.9。整體 RMSE 13.2 的主要殘留來自土耳其單一事件 — 2025 年 3 月伊斯坦堡市長 Imamoglu 被捕後的單週抗議數達 197，但模型僅預測 34。這類因突發政治事件導致的 structural break 不在訓練分布範圍內，且 lag / rolling 特徵對瞬時衝擊反應較慢，模型結構上難以外推。
+#### 對 Imamoglu 序列的反事實檢驗
+
+```
+週次         protest_count_all  protest_count  protest_ratio
+2025-02-17                  8              4         0.004
+2025-02-24                 10              4         0.003
+2025-03-03                  6              3         0.003
+2025-03-10                  7              0         0.004    ← 預測下週 actual=99，模型沒任何訊號
+2025-03-17                 99             88         0.041    ← 預測下週 actual=197，模型只從 protest_ratio 抓到 +14
+2025-03-24                197            144         0.066
+2025-03-31                 71             44         0.039
+```
+
+**Row 2025-03-17 的 target = 2025-03-24 的 protest_count_all = 197**。這一列如果有 `protest_count_all`（當週=99）做為 feature，模型就能用簡單的 AR(1) 邏輯（自相關 0.53）推到下週應該也 100+，再加上現有 protest_ratio 放大，預測可能落到 150-200 範圍。
+
+**Row 2025-03-10 的 target = 2025-03-17 的 99** — 這一列當週 protest_count_all=7（完全正常），這是真正的 unpredictable shock，任何模型都打不到。
+
+### 殘留問題的修正版假設（基於上述證據）
+
+#### A. LE 殘留 over-predict — 確認為 OOD 外推
+
+樹模型在 LE 訓練分布外（2024-09 黎以衝突期間衝突訊號量級史上新高）只能用 saturate 的 leaf prediction。
+- **次要因素**：`tone_goldstein_inter` 在 SHAP 中對 LE 兩個殘差都是 −4 左右（不是主要 driver，原本的懷疑撤回）
+- **主要因素**：`n_material_conf_diff_1w`、`n_material_conf_lag10`、`n_verbal_conf` 等變數的 OOD 值集中推高預測
+
+#### B. TU under-predict — **重新定性為「缺乏自迴歸特徵」而非「structural break」**
+
+原本診斷說「structural break 不在 train 分布內」是錯的 — features 都在 train 分布內。真正的問題是模型沒有 protest_count 系列的 lag 特徵，所以即使本週 protest 已經暴升，模型也無法把這個訊號傳遞到下週預測。
+
+對於 Imamoglu 完全突發的第一週（2025-03-10 → 預測 2025-03-17=99）仍然無解 — 那是真正的「零訊號 shock」，任何純媒體訊號模型都打不到。
+
+### 建議改善行動（按優先順序）
+
+#### 🔴 高優先 — 加 protest 自迴歸特徵（預期能解掉 TU 殘差大宗，並順帶緩解 LE）
+
+在 `src/feature_engineering.py` 加入 `protest_count_all` 系列的 lag/rolling/diff，與現有 tone/goldstein/material_conf 的處理一致：
+
+```python
+# 在 ROLLING_LAG_TARGETS 加上 protest_count_all
+ROLLING_LAG_TARGETS = ['avg_tone', 'avg_goldstein', 'n_material_conf', 'protest_count_all']
+```
+
+並從 `src/ml_models.NON_FEATURE_COLS` 移除 `'protest_count_all'`（讓當週值也能當 feature；target 是 `shift(-1)`，無 leakage）。
+
+**預期效果**：
+- TU 2025-03-17（預測下週 197）：當週 `protest_count_all=99` 直接作為強訊號 + 同樣強的 lag-1 自相關 → 預測有機會跳到 100-200 範圍，殘差大幅縮小
+- LE 2026-03-02（OOD 過度預測）：當週 `protest_count_all=2`（極低）給模型負向訊號，能對沖部分 OOD 衝突訊號帶來的虛假 over-predict
+
+成本：~10 行程式碼 + 重跑 04→09→10→10b→11→15 pipeline。
+
+#### 🟡 中優先 — 對 LE OOD 問題的後續處理
+
+A.1 **Winsorize features at train p99**：對 `n_material_conf`、`n_verbal_conf`、`n_material_conf_lag*` 在 inference 時 clip 到 train 的 p99，避免樹外推。代價：實作上需要在 `prepare_xy` 階段加 clip，且要記住 train p99。
+
+A.2 **加 domestic-only 衝突特徵**：跟 Member A 協調，請 `01_build_country_weekly.py` 多輸出 `n_material_conf_domestic`、`avg_goldstein_domestic`（限定 `Actor1CountryCode=Actor2CountryCode=ActionGeo`）。讓模型同時看到「整體衝突」與「國內衝突」兩家族，學會在 LE 跨境戰爭期間哪一家才該主導 protest 預測。
+
+#### 🟢 低優先 — Imamoglu 第一週（2025-03-10 → 預測 99）
+
+這是真正的零訊號 shock，任何純媒體模型結構上打不到。建議 report 中坦承為**本研究方法的本質限制**，不要試圖過度工程化去硬擬合。可考慮：
+
+- 預測同時輸出 quantile interval（XGBoost quantile loss）顯示不確定性
+- 在 report 寫法中明確區分「可預測的延續期（2025-03-24 的 197）」與「不可預測的衝擊起點（2025-03-17 的 99）」
+
+### Report 寫法（草稿，已更新數字 + Task #3 診斷）
+
+> 將測試集 RMSE 拆解到各國後可以看見一個明顯的異質性：阿根廷、智利、斯里蘭卡三國的 RMSE 皆在 4-5 之間，黎巴嫩 17.0，土耳其 22.9。整體 RMSE 13.2 的主要殘留集中在這兩個國家，但成因截然不同。
 >
-> 黎巴嫩在 2024 年 9-11 月黎以衝突升級期間仍呈現殘留的 over-prediction（誤差 50-70），但相較於原始 pipeline（最大誤差 +198）已大幅收斂。改善來源是 GDELT 事件的「行為發生地」聚合口徑（`ActionGeo_CountryCode`）取代「主動方國家」（`country_1`），使得跨境衝突事件能正確歸入黎巴嫩脈絡而非以色列脈絡。
+> 土耳其的最大殘差（2025-03-24 actual=197、predicted=34）對應 Imamoglu 被捕後的大規模抗議。Regime check 顯示該週所有 conflict 訊號都在訓練分布內，並非「沒見過這個量級的衝突」。SHAP 分析揭示真正的瓶頸：本模型 90 個特徵中完全沒有 protest 自迴歸特徵（`protest_count_*_lag*`），即使前一週抗議數已從 7 跳到 99，模型也無法把這個訊號傳遞到下週預測。實測 TU 訓練期間抗議數的 lag-1 自相關為 0.53（強訊號），這是現行模型結構上的盲點。
+>
+> 黎巴嫩在 2024 年 9-11 月黎以衝突升級期間仍呈現殘留的 over-prediction（誤差 50-70），但相較於原始 pipeline（最大誤差 +198）已大幅收斂，改善來源是 GDELT 事件聚合口徑從「主動方國家」改為「行為發生地」。殘留部分為真正的 out-of-distribution 外推 — 該段期間黎巴嫩的 `n_material_conf` 等衝突訊號達到訓練期間 max 的 2-3 倍，樹模型只能用最後一個 split 對應的葉節點外推。
 
 ---
 
@@ -130,4 +207,5 @@ LE 的進步來自於新聚合口徑（`ActionGeo` vs `country_1`）— 以黎�
 feat: add 10b_collate_model_comparison.py to unify ML metrics source of truth
 fix: load_country_weekly reads OUTPUT_DIR; use protest_count_all as ML target
 docs: update issues_E.md with Issue #1/#2 resolution and Issue #3 reframe
+docs: add Task #3 diagnosis to issues_E.md (regime + SHAP for LE/TU)
 ```

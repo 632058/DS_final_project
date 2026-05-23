@@ -18,6 +18,7 @@
 | D | 統計檢定 CCF + Granger | [member_D.md](member_D.md) |
 | E | 機器學習 XGBoost + SHAP | [member_E.md](member_E.md) |
 | F | 視覺化 + 報告整合 | [member_F.md](member_F.md) |
+| Cross-cutting | Feature scope cleanup + Fig 5/6 改善計畫 | [feature_scope_and_fig56_plan.md](feature_scope_and_fig56_plan.md) |
 
 ---
 
