@@ -1,18 +1,18 @@
 # Issue Board — Member E (ML)
 
 > Owner: Member E（曾弘舟）
-> Status snapshot: 2026-05-23（updated after Issue #1 fix + data-path fix）
-> Scope: `scripts/09_train_lasso.py`, `scripts/10_train_xgboost.py`, `scripts/10b_collate_model_comparison.py`, `scripts/11_compute_shap.py`, `output/ml_results/*`
+> Status snapshot: 2026-05-23（updated after Phase 1 + 2a + 2b + 2c on branch `feat/ml-refactor`）
+> Scope: `scripts/09_train_lasso.py`, `scripts/10_train_xgboost.py`, `scripts/10b_collate_model_comparison.py`, `scripts/10c_per_country_xgboost_diagnostic.py`, `scripts/11_compute_shap.py`, `scripts/15_make_ml_diagnostic_figures.py`, `src/ml_cli.py`, `src/ml_models.py`, `src/feature_engineering.py`, `output/ml_results/{all,domestic}/{raw,log1p}/*`
 
 ## 進度總覽
 
 | Issue | Status | 重點 |
 |---|---|---|
 | #1 `model_comparison.parquet` 對不上 | ✅ Resolved | 改成由 `scripts/10b_collate_model_comparison.py` 自動由 lasso/xgb metrics 拼出。 |
-| #2 XGBoost 整體 RMSE 比 Lasso 還差 | ✅ Largely resolved | data path bug 修掉後 XGBoost RMSE 13.24 ≈ Lasso 12.48；MAE 上 XGBoost 反贏。 |
-| #3 LE over-predict / TU under-predict | 🟡 Partial | LE 改善 62.7%（RMSE 45.65 → 17.03）；TU 幾乎沒變（22.62 → 22.87）。Task #3 regime+SHAP 診斷：LE 是 OOD 外推、TU 是模型結構缺 protest 自迴歸特徵（90 個特徵裡完全沒有 `protest_count_*_lag*`，但實測 lag-1 自相關 0.53）。修法：補上 protest_count_all 系列 lag/rolling 特徵。 |
+| #2 XGBoost 整體 RMSE 比 Lasso 還差 | ✅ Largely resolved | data path bug 修掉後 XGBoost RMSE 13.24 ≈ Lasso 12.48；MAE 上 XGBoost 反贏。Phase 2a log1p 之後 XGBoost RMSE 12.54 反超 Lasso 12.69，主結果改用 XGBoost log1p。 |
+| #3 LE over-predict / TU under-predict | ✅ LE Resolved / 🟡 TU 結構限制 | **LE**: log1p target transform 後 RMSE 從 17.03 收到 9.37（−45%），pred_max 從 85.6 收到 27.6，OOD over-predict 完全解決。**TU**: 仍維持 22.93，per-country diagnostic (`10c`) 證實 pooling 並非主因（TU-only model 反而 RMSE 24.12，更差 +1.19），確認為**方法本質限制** — Imamoglu 屬 zero-signal political shock。 |
 
-下面三項是原始 issue 紀錄與後續更新。
+下面三項是原始 issue 紀錄與後續更新；2026-05-23 末段補上 Phase 1-2c 完整收尾。
 
 ---
 
@@ -201,6 +201,71 @@ A.2 **加 domestic-only 衝突特徵**：跟 Member A 協調，請 `01_build_cou
 
 ---
 
+## Phase 1 / 2a / 2b / 2c 完整收尾（2026-05-23, branch `feat/ml-refactor`）
+
+### 累計指標（XGBoost all/log1p，主結果）
+
+| 指標 | Pre-Phase1 baseline | 目前（Phase 2c） | 累計變化 |
+|---|---:|---:|---|
+| 整體 RMSE | 13.24 | **12.54** | −5.3% |
+| 整體 MAE | 6.84 | **5.63** | −17.7% |
+| LE per-country RMSE | 17.03 | **9.37** | **−45.0%** |
+| LE pred_max | 85.6 | **27.6** | OOD over-predict 消失 |
+| TU per-country RMSE | 22.87 | 22.93 | ~持平（Imamoglu 結構限制）|
+| Directional accuracy | **65.5%（buggy pooled diff）** | **37.9%（per-country 修正）** | bug fix，數字下調是揭露假象 |
+
+### Phase 1 — protest 自迴歸特徵
+- `src/feature_engineering.py` 的 `ROLLING_LAG_TARGETS` 加 `protest_count_all`，產出 lag1-12 / rolling_mean/std 4w-12w / diff_1w/4w / pct_change_4w
+- `src/ml_models.NON_FEATURE_COLS` 移除 `protest_count_all` 讓當週值可作 AR feature
+- `scripts/01_build_country_weekly.py` 改用 `data/weekly_country_relation_directed_base.parquet`（DuckDB 已空），可重生 `protest_count`（domestic）與 `protest_count_all`（source=target）
+
+### Phase 2a — log1p target transform + dir-acc bug fix
+- 新增 `apply_target_transform` / `invert_target_transform`，CLI flag `--target-transform raw|log1p`
+- 把舊 `evaluate()` 中 `np.diff(y_true.values)` 跨 panel 邊界的 bug 拆分：`evaluate()` 只算 RMSE/MAE，新 `evaluate_predictions(pred_df)` 在每 country 內部 sort 後算 dir acc
+- 確認 log1p 對 LE OOD over-predict 完全有效
+
+### Phase 2b — 雙分支 CLI + 目錄階層化
+- 新增 `src/ml_cli.py` 集中 `add_branch_args(parser)` 與 `resolve_paths(scope, transform)`
+- `src/constants.py` 新增 `ml_results_subdir`、`figures_subdir`、`is_default_branch`
+- 重構 `add_target(df, scope)`、`non_feature_cols(scope, columns)`、`prepare_xy(df, scope)`
+- 9/10/10b/11/15 全部接受 `--target-scope all|domestic` + `--target-transform raw|log1p`
+- 輸出路徑：`output/ml_results/{scope}/{transform}/`、`figures/{scope}/`
+- backward compat：`scope=all, transform=raw` 同時鏡像到頂層 legacy 路徑
+
+### Phase 2c — domestic AR features + scope-aware drop
+- `protest_count` 加進 `ROLLING_LAG_TARGETS`（22 個 domestic AR features）
+- 新增 `protest_ratio_domestic`
+- `non_feature_cols(scope, columns)` 改為動態 drop OTHER scope 的整個 AR family（lag/rolling/diff/pct_change/ratio）；否則 all branch 在 Phase 2c features 多 22 個 noise → RMSE 退 1.7
+- 加 scope-aware drop 後 all branch RMSE 完全等同 Phase 2b
+
+### TU per-country diagnostic（scripts/10c）
+
+跨 4 個 branch 都驗證 TU 在 per-country model 反而比 pooled 差：
+
+| Branch | TU pooled RMSE | TU per-country RMSE | Delta |
+|---|---:|---:|---:|
+| all/raw | 21.50 | 34.79 | +13.30 |
+| all/log1p | 22.93 | 24.12 | +1.19 |
+| domestic/raw | 14.85 | 23.47 | +8.62 |
+| domestic/log1p | 17.14 | 17.94 | +0.80 |
+
+**結論**：pooling 對 TU 有幫助而非拖累。TU 的高殘差來自 Imamoglu 政治突發事件，純媒體/衝突訊號模型結構上打不到。具體分解：
+- **TU 2025-03-10** (actual 99, pred 8)：當週 `protest_count_all=7`（完全正常），純 zero-signal shock。任何純媒體模型不可能預測。
+- **TU 2025-03-17** (actual 197, pred 40)：當週 99 已暴升，AR features 提供訊號，但 log1p 壓縮 + train 期間 99→200 的 transition 罕見，最大殘差 +157。
+- TU top 3 殘差占 TU SSE 65.2%；TU 占整體 MSE 81.7%（24% rows）。
+
+### Report 寫法（最終版本草稿）
+
+> XGBoost (log1p) 是本研究的最終主結果，整體 test RMSE 12.54、MAE 5.63、country-aware directional accuracy 37.9%。
+>
+> **Lebanon OOD 已收斂**：黎巴嫩在 2024 年 9–11 月黎以衝突期間原本呈現 +50~70 的 over-prediction（pre-Phase 1 RMSE 17）。透過對 target 套 `log1p` 轉換，模型在 log 空間學習，預測值還原至原空間時自然被壓縮，LE 的 per-country RMSE 收到 9.37，預測上限從 85.6 收到 27.6。
+>
+> **Turkey Imamoglu 案例為方法本質限制**：土耳其 2025-03-17 的最大殘差 +157 對應 Imamoglu 被捕引發的大規模抗議。Per-country diagnostic 確認此並非 pooling 問題（TU 單獨訓練 RMSE 24.12，反比 pooled 22.93 差 +1.19）；Regime check 也排除 OOD 假設（TU train 期間 `protest_count_all` p99=211，遠高於 test max 197）。SHAP 分析顯示模型唯一抓到的訊號 `protest_ratio` 僅貢獻 +14，主要根因是 2025-03-10 那週的觸發完全屬於 zero-signal shock — 當週抗議數為 7，模型沒有任何 leading indicator 可用。本研究的結論是：基於 GDELT 媒體與衝突結構的模型對於延續期（peak-to-peak）具有預測力（XGBoost 在 LE 與其他國家 dir_acc 40-46%），對突發政治事件的起點則結構上無解，需引入外部事件型 indicator 才能進一步改善。
+>
+> **方向準確率修正說明**：先前報告的 ~65% directional accuracy 為計算 bug 所致（pooled-panel `np.diff` 跨國家邊界）。修正為 country-aware 計算後，pooled XGBoost 約 37.9%，per-country 介於 28-46%。
+
+---
+
 ## 建議 commit messages
 
 ```
@@ -208,4 +273,9 @@ feat: add 10b_collate_model_comparison.py to unify ML metrics source of truth
 fix: load_country_weekly reads OUTPUT_DIR; use protest_count_all as ML target
 docs: update issues_E.md with Issue #1/#2 resolution and Issue #3 reframe
 docs: add Task #3 diagnosis to issues_E.md (regime + SHAP for LE/TU)
+feat: add log1p target transform CLI and per-country directional accuracy
+feat: introduce dual-branch CLI (--target-scope, --target-transform) and ml_cli helper
+feat: add domestic AR features with scope-aware drop in prepare_xy
+feat: add 10c per-country xgboost diagnostic + small-multiples fig5
+docs: append Phase 1-2c summary and TU method-limit conclusion
 ```
