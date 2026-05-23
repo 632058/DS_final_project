@@ -10,6 +10,10 @@ data/*
 output/**/raw_*.parquet
 output/**/*_large.parquet
 
+# Local backups (manual snapshots taken before refactor runs)
+output/**/*.bak_*
+output/**/*.bak
+
 # Figures — commit (small enough, helps PR review and report integration)
 
 # Large database files anywhere

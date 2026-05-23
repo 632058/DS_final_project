@@ -5,6 +5,8 @@ Time-based train/test split (no shuffling) to avoid look-ahead bias.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 import xgboost as xgb
@@ -15,6 +17,8 @@ from sklearn.preprocessing import StandardScaler
 from src.constants import TRAIN_RATIO
 
 TARGET_COL = 'protest_count_next_week'
+
+TransformKind = Literal['raw', 'log1p']
 
 NON_FEATURE_COLS = {
     'week_start', 'country',
@@ -70,14 +74,103 @@ def prepare_xy(df: pd.DataFrame, target: str = TARGET_COL) -> tuple:
 
 
 def evaluate(y_true: pd.Series, y_pred: np.ndarray) -> dict:
-    """RMSE, MAE, and Directional Accuracy (sign of week-over-week change)."""
+    """RMSE and MAE on the original scale.
+
+    Does NOT compute directional accuracy. The previous implementation called
+    ``np.diff(y_true.values)`` on a pooled-panel y, which mixes neighbouring
+    rows from different countries at country boundaries. Use
+    ``evaluate_predictions(pred_df)`` instead, which sorts within each country
+    before taking diffs.
+    """
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
     mae = float(mean_absolute_error(y_true, y_pred))
-    actual_diff = np.diff(y_true.values)
-    pred_diff = np.diff(y_pred)
-    directional = float(np.mean(np.sign(actual_diff) == np.sign(pred_diff))) \
-        if len(actual_diff) > 0 else float('nan')
-    return {'rmse': rmse, 'mae': mae, 'directional_accuracy': directional}
+    return {'rmse': rmse, 'mae': mae}
+
+
+def evaluate_predictions(pred_df: pd.DataFrame) -> dict:
+    """Country-aware metrics from a predictions DataFrame.
+
+    Parameters
+    ----------
+    pred_df : DataFrame with at least these columns:
+        country, week_start, actual, predicted
+
+    Returns
+    -------
+    dict with keys:
+        rmse, mae                        : pooled across all rows
+        directional_accuracy             : sample-weighted mean of per-country
+                                           directional accuracy (sign of
+                                           week-over-week change). NaN if every
+                                           country has fewer than 2 rows.
+        per_country_directional          : dict country -> directional accuracy
+                                           (NaN for countries with <2 rows)
+    """
+    required = {'country', 'week_start', 'actual', 'predicted'}
+    missing = required - set(pred_df.columns)
+    if missing:
+        raise ValueError(f"pred_df missing required columns: {sorted(missing)}")
+
+    df = pred_df.sort_values(['country', 'week_start']).reset_index(drop=True)
+
+    rmse = float(np.sqrt(mean_squared_error(df['actual'], df['predicted'])))
+    mae = float(mean_absolute_error(df['actual'], df['predicted']))
+
+    per_country: dict[str, float] = {}
+    weighted_sum = 0.0
+    total_weight = 0
+    for country, grp in df.groupby('country', sort=True):
+        if len(grp) < 2:
+            per_country[country] = float('nan')
+            continue
+        actual_sign = np.sign(np.diff(grp['actual'].to_numpy()))
+        pred_sign = np.sign(np.diff(grp['predicted'].to_numpy()))
+        dir_acc = float(np.mean(actual_sign == pred_sign))
+        per_country[country] = dir_acc
+        weight = len(grp) - 1
+        weighted_sum += dir_acc * weight
+        total_weight += weight
+
+    overall_dir = (
+        float(weighted_sum / total_weight) if total_weight > 0 else float('nan')
+    )
+
+    return {
+        'rmse': rmse,
+        'mae': mae,
+        'directional_accuracy': overall_dir,
+        'per_country_directional': per_country,
+    }
+
+
+def apply_target_transform(y: pd.Series | np.ndarray, kind: TransformKind) -> np.ndarray:
+    """Forward-transform the regression target prior to fitting.
+
+    ``raw``   : identity
+    ``log1p`` : log(1 + y); requires y >= 0
+    """
+    arr = np.asarray(y, dtype=float)
+    if kind == 'raw':
+        return arr
+    if kind == 'log1p':
+        if (arr < 0).any():
+            raise ValueError("log1p target transform requires y >= 0")
+        return np.log1p(arr)
+    raise ValueError(f"unknown target transform: {kind!r}")
+
+
+def invert_target_transform(y_pred: np.ndarray, kind: TransformKind) -> np.ndarray:
+    """Inverse of ``apply_target_transform`` for model predictions.
+
+    Negative predictions are NOT clipped here; callers should clip if their
+    target is a non-negative count (e.g. ``np.clip(out, 0, None)``).
+    """
+    arr = np.asarray(y_pred, dtype=float)
+    if kind == 'raw':
+        return arr
+    if kind == 'log1p':
+        return np.expm1(arr)
+    raise ValueError(f"unknown target transform: {kind!r}")
 
 
 def train_lasso(X_train: pd.DataFrame, y_train: pd.Series, alpha: float = 1.0) -> tuple:

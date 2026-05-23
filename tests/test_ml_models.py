@@ -1,10 +1,14 @@
 """Smoke tests for src.ml_models."""
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.ml_models import (
     add_target,
+    apply_target_transform,
     evaluate,
+    evaluate_predictions,
+    invert_target_transform,
     prepare_xy,
     time_train_test_split,
     train_lasso,
@@ -22,6 +26,10 @@ def _make_dummy() -> pd.DataFrame:
                 'country': c,
                 'week_start': w,
                 'protest_count': i,
+                # protest_count_all is the current ML target source (see add_target);
+                # use a distinct offset so we can confirm the target uses _all and not
+                # the domestic-only protest_count column.
+                'protest_count_all': i * 2,
                 'avg_tone_lag1': -2.0,
                 'is_AR': 1 if c == 'AR' else 0,
             })
@@ -32,7 +40,8 @@ def test_add_target_shifts_per_country():
     df = _make_dummy()
     out = add_target(df)
     ce = out[out['country'] == 'CE'].sort_values('week_start').reset_index(drop=True)
-    assert ce.loc[0, 'protest_count_next_week'] == 1
+    # target_next_week comes from protest_count_all.shift(-1); row 0 -> row 1's value (2)
+    assert ce.loc[0, 'protest_count_next_week'] == 2
     assert pd.isna(ce.iloc[-1]['protest_count_next_week'])
 
 
@@ -45,19 +54,111 @@ def test_time_split_no_overlap():
 def test_prepare_xy_drops_non_features():
     df = _make_dummy()
     df = add_target(df)
-    X, y, _ = prepare_xy(df)
+    X, _y, _ = prepare_xy(df)
+    # protest_count (domestic legacy) excluded
     assert 'protest_count' not in X.columns
+    # protest_count_next_week (target) excluded
     assert 'protest_count_next_week' not in X.columns
+    # metadata excluded
     assert 'country' not in X.columns
     assert 'week_start' not in X.columns
+    # current-week protest_count_all is a legitimate AR feature (Phase 1)
+    assert 'protest_count_all' in X.columns
 
 
-def test_evaluate_perfect_prediction():
+# ---------------------------------------------------------------------------
+# evaluate / evaluate_predictions
+# ---------------------------------------------------------------------------
+
+def test_evaluate_perfect_prediction_rmse_zero():
     y = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
     y_hat = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     m = evaluate(y, y_hat)
-    assert m['rmse'] == 0
+    assert m['rmse'] == 0.0
+    assert m['mae'] == 0.0
+    # evaluate() no longer reports directional_accuracy (see docstring)
+    assert 'directional_accuracy' not in m
+
+
+def test_evaluate_predictions_per_country_dir_acc():
+    # Two countries; build predictions so each country has a clean monotone
+    # signal -> per-country dir acc should be 1.0.
+    weeks = pd.date_range('2024-01-01', periods=5, freq='W-MON')
+    rows = []
+    for c, base in [('AR', 0), ('TU', 100)]:
+        for i, w in enumerate(weeks):
+            rows.append({
+                'country': c,
+                'week_start': w,
+                'actual': base + i,
+                'predicted': base + i + 0.1,
+            })
+    pred_df = pd.DataFrame(rows)
+    m = evaluate_predictions(pred_df)
+    assert m['per_country_directional'] == {'AR': 1.0, 'TU': 1.0}
     assert m['directional_accuracy'] == 1.0
+
+
+def test_evaluate_predictions_does_not_diff_across_country_boundary():
+    # Old buggy evaluate() would diff across country boundary. Construct a panel
+    # where pooled np.diff sees a fake reversal at the AR->TU boundary, but
+    # per-country diffs are all monotone up.
+    weeks = pd.date_range('2024-01-01', periods=4, freq='W-MON')
+    rows = []
+    # AR: actual 1,2,3,4  predicted matching -> dir acc 1.0
+    for i, w in enumerate(weeks):
+        rows.append({'country': 'AR', 'week_start': w,
+                     'actual': float(1 + i), 'predicted': float(1 + i)})
+    # TU: actual 100,101,102,103  predicted matching -> dir acc 1.0
+    for i, w in enumerate(weeks):
+        rows.append({'country': 'TU', 'week_start': w,
+                     'actual': float(100 + i), 'predicted': float(100 + i)})
+    pred_df = pd.DataFrame(rows)
+    m = evaluate_predictions(pred_df)
+    # If the function were diffing across the AR->TU boundary, dir acc would
+    # also include the boundary step (4 -> 100) and still be 1.0 because both
+    # actual and predicted jump together. So construct a deliberate disagreement
+    # at the country boundary: AR ends at predicted=4, TU starts at predicted=99
+    # while TU actual still goes 100,101,102,103. Per-country dir acc should
+    # still be 1.0 because within each country actual & predicted both increase.
+    pred_df.loc[pred_df['country'] == 'TU', 'predicted'] = [99.0, 100.0, 101.0, 102.0]
+    m = evaluate_predictions(pred_df)
+    assert m['per_country_directional']['AR'] == 1.0
+    assert m['per_country_directional']['TU'] == 1.0
+    assert m['directional_accuracy'] == 1.0
+
+
+def test_evaluate_predictions_requires_columns():
+    bad_df = pd.DataFrame({'country': ['AR'], 'actual': [1.0], 'predicted': [1.0]})
+    with pytest.raises(ValueError, match="missing required columns"):
+        evaluate_predictions(bad_df)
+
+
+# ---------------------------------------------------------------------------
+# apply_target_transform / invert_target_transform
+# ---------------------------------------------------------------------------
+
+def test_target_transform_raw_is_identity():
+    y = np.array([0.0, 1.0, 7.0, 100.0])
+    assert np.allclose(apply_target_transform(y, 'raw'), y)
+    assert np.allclose(invert_target_transform(y, 'raw'), y)
+
+
+def test_target_transform_log1p_roundtrip():
+    y = np.array([0.0, 1.0, 7.0, 100.0, 5000.0])
+    t = apply_target_transform(y, 'log1p')
+    inv = invert_target_transform(t, 'log1p')
+    assert np.allclose(inv, y, atol=1e-9)
+
+
+def test_target_transform_log1p_rejects_negative():
+    with pytest.raises(ValueError, match="y >= 0"):
+        apply_target_transform(np.array([-1.0, 1.0]), 'log1p')
+
+
+def test_target_transform_unknown_kind_raises():
+    with pytest.raises(ValueError, match="unknown target transform"):
+        apply_target_transform(np.array([1.0]), 'sqrt')
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +174,8 @@ def _make_xy(n: int = 60):
     })
     y = pd.Series(rng.standard_normal(n))
     split = int(n * 0.8)
-    return X.iloc[:split].copy(), y.iloc[:split].copy(), X.iloc[split:].copy(), y.iloc[split:].copy()
+    return (X.iloc[:split].copy(), y.iloc[:split].copy(),
+            X.iloc[split:].copy(), y.iloc[split:].copy())
 
 
 def test_train_lasso_returns_model_and_scaler():
@@ -92,7 +194,7 @@ def test_train_lasso_predict_shape():
 
 def test_train_lasso_scaler_fit_on_train_only():
     X_tr, y_tr, X_te, _ = _make_xy()
-    model, scaler = train_lasso(X_tr, y_tr)
+    _, scaler = train_lasso(X_tr, y_tr)
     X_te_scaled = scaler.transform(X_te)
     assert X_te_scaled.shape == X_te.shape
 
@@ -121,7 +223,8 @@ def test_train_xgboost_returns_finite_predictions():
 def test_train_xgboost_custom_params_applied():
     import xgboost as xgb
     X_tr, y_tr, _, _ = _make_xy()
-    model = train_xgboost(X_tr, y_tr, params={'n_estimators': 5, 'max_depth': 2, 'random_state': 0})
+    model = train_xgboost(X_tr, y_tr,
+                          params={'n_estimators': 5, 'max_depth': 2, 'random_state': 0})
     assert isinstance(model, xgb.XGBRegressor)
     assert model.n_estimators == 5
     assert model.max_depth == 2

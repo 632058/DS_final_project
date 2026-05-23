@@ -28,7 +28,8 @@ def _make_dummy(n_weeks: int = 30) -> pd.DataFrame:
                 'weighted_tone': -2.0, 'weighted_goldstein': 0.7,
                 'n_verbal_coop': 1, 'n_material_coop': 1,
                 'n_verbal_conf': 1, 'n_material_conf': 1,
-                'protest_count': 0, 'violence_count': 0,
+                'protest_count': 0, 'protest_count_all': 0,
+                'violence_count': 0,
                 'verbal_threat_count': 0,
             })
     return pd.DataFrame(rows)
