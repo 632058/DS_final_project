@@ -41,3 +41,51 @@ LAG_RANGE = list(range(1, 13))
 
 # Train/test split ratio
 TRAIN_RATIO = 0.8
+
+# ---------------------------------------------------------------------------
+# ML pipeline output layout (dual-branch: target-scope × target-transform)
+# ---------------------------------------------------------------------------
+
+ML_RESULTS_DIR = OUTPUT_DIR / "ml_results"
+
+# Scope = target column used for the next-week prediction
+#   'all'      -> protest_count_all   (all-scope, current ML main line)
+#   'domestic' -> protest_count       (Actor1=Actor2=country, domestic-only)
+TARGET_SCOPES = ('all', 'domestic')
+
+# Transform = forward function applied to y before fitting
+#   'raw'   -> identity
+#   'log1p' -> log(1+y)
+TARGET_TRANSFORMS = ('raw', 'log1p')
+
+
+def ml_results_subdir(scope: str, transform: str):
+    """Return output/ml_results/{scope}/{transform}/ for the given branch.
+
+    Does not create the directory; callers should mkdir(parents=True, exist_ok=True).
+    """
+    if scope not in TARGET_SCOPES:
+        raise ValueError(f"unknown target scope: {scope!r}")
+    if transform not in TARGET_TRANSFORMS:
+        raise ValueError(f"unknown target transform: {transform!r}")
+    return ML_RESULTS_DIR / scope / transform
+
+
+def figures_subdir(scope: str):
+    """Return figures/{scope}/ for the given branch.
+
+    Callers should mkdir(parents=True, exist_ok=True).
+    """
+    if scope not in TARGET_SCOPES:
+        raise ValueError(f"unknown target scope: {scope!r}")
+    return FIGURES_DIR / scope
+
+
+def is_default_branch(scope: str, transform: str) -> bool:
+    """True if (scope, transform) is the legacy default that should also be
+    mirrored to the top-level paths (output/ml_results/*, figures/*).
+
+    Other members' scripts and report figures consume those top-level paths,
+    so we always dual-write the default branch to preserve backward compat.
+    """
+    return scope == 'all' and transform == 'raw'
