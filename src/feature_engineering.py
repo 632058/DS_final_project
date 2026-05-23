@@ -17,7 +17,8 @@ COUNT_COLUMNS = [
     'n_events', 'n_mentions_total',
     'n_verbal_coop', 'n_material_coop',
     'n_verbal_conf', 'n_material_conf',
-    'protest_count', 'violence_count', 'verbal_threat_count',
+    'protest_count', 'protest_count_all',
+    'violence_count', 'verbal_threat_count',
 ]
 
 AVG_COLUMNS = [
@@ -161,7 +162,7 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
     n = df['n_events'].replace(0, np.nan)
     df['material_conf_ratio'] = df['n_material_conf'] / n
     df['verbal_conf_ratio']   = df['n_verbal_conf']   / n
-    df['protest_ratio']       = df['protest_count']   / n
+    df['protest_ratio']       = df['protest_count_all'] / n
 
     # 3. Seasonal features
     df['week_of_year'] = df['week_start'].dt.isocalendar().week.astype(int)

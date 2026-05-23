@@ -17,14 +17,21 @@ from src.constants import TRAIN_RATIO
 TARGET_COL = 'protest_count_next_week'
 
 NON_FEATURE_COLS = {
-    'week_start', 'country', 'protest_count', TARGET_COL,
+    'week_start', 'country',
+    'protest_count', 'protest_count_all', TARGET_COL,
 }
 
 
 def add_target(df: pd.DataFrame) -> pd.DataFrame:
-    """Add protest_count_next_week as protest_count.shift(-1) per country."""
+    """Add the next-week target as protest_count_all.shift(-1) per country.
+
+    Uses protest_count_all (all events in the country) rather than the
+    domestic-only protest_count, so the target stays on the same scope as
+    the conflict-structure features (avg_tone, avg_goldstein, n_material_conf
+    are all all-events-scope).
+    """
     df = df.sort_values(['country', 'week_start']).copy()
-    df[TARGET_COL] = df.groupby('country')['protest_count'].shift(-1)
+    df[TARGET_COL] = df.groupby('country')['protest_count_all'].shift(-1)
     return df
 
 
