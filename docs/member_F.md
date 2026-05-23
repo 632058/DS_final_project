@@ -157,7 +157,7 @@ pandoc report/final.md -o report/final.pdf \
 ## 交付檢查清單
 
 - [x] **W1 Day 3**:repo 結構 + `src/` + `tests/` + `scripts/` + `report/` 骨架 + `requirements.txt` + `.gitignore` 全部 push 上 main
-- [ ] **W1 Day 7**:`figures/fig1_tone_vs_protest_per_country.png` + `figures/fig2_tone_goldstein_heatmap.png`
-- [ ] **W2 中**:`figures/fig3_umap_eventmix.png`
+- [x] **W1 Day 7**:`figures/fig1_tone_vs_protest_per_country.png` + `figures/fig2_tone_goldstein_heatmap.png`
+- [x] **W2 中**:`figures/fig3_umap_eventmix.png`
 - [ ] **W2 末**:Fig 4-7 風格統一 review + 各章節骨架已被填寫中
 - [ ] **W3 末**:Fig 8 整合 + `report/final.pdf` + 簡報投影片
