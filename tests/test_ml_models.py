@@ -9,6 +9,7 @@ from src.ml_models import (
     evaluate,
     evaluate_predictions,
     invert_target_transform,
+    non_feature_cols,
     prepare_xy,
     time_train_test_split,
     train_lasso,
@@ -36,13 +37,70 @@ def _make_dummy() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_add_target_shifts_per_country():
+def test_add_target_shifts_per_country_default_all_scope():
     df = _make_dummy()
     out = add_target(df)
     ce = out[out['country'] == 'CE'].sort_values('week_start').reset_index(drop=True)
-    # target_next_week comes from protest_count_all.shift(-1); row 0 -> row 1's value (2)
+    # default scope='all' uses protest_count_all (i*2); row 0 -> row 1's value (2)
     assert ce.loc[0, 'protest_count_next_week'] == 2
     assert pd.isna(ce.iloc[-1]['protest_count_next_week'])
+
+
+def test_add_target_domestic_scope_uses_protest_count():
+    df = _make_dummy()
+    out = add_target(df, scope='domestic')
+    ce = out[out['country'] == 'CE'].sort_values('week_start').reset_index(drop=True)
+    # domestic scope uses protest_count (i); row 0 -> row 1's value (1)
+    assert ce.loc[0, 'protest_count_next_week'] == 1
+    assert pd.isna(ce.iloc[-1]['protest_count_next_week'])
+
+
+def test_add_target_unknown_scope_raises():
+    df = _make_dummy()
+    with pytest.raises(ValueError, match="unknown target scope"):
+        add_target(df, scope='crossborder')
+
+
+_SAMPLE_COLUMNS = [
+    'week_start', 'country',
+    'protest_count', 'protest_count_lag1', 'protest_count_diff_1w',
+    'protest_count_rolling_mean_4w', 'protest_ratio_domestic',
+    'protest_count_all', 'protest_count_all_lag1', 'protest_count_all_diff_1w',
+    'protest_count_all_rolling_mean_4w', 'protest_ratio',
+    'avg_tone', 'n_material_conf', 'is_AR',
+    'protest_count_next_week',
+]
+
+
+def test_non_feature_cols_metadata_only_without_columns():
+    drop = non_feature_cols('all')
+    assert drop == frozenset({'week_start', 'country', 'protest_count_next_week'})
+
+
+def test_non_feature_cols_all_drops_full_domestic_family():
+    drop = non_feature_cols('all', columns=_SAMPLE_COLUMNS)
+    # full domestic AR family removed
+    assert {'protest_count', 'protest_count_lag1', 'protest_count_diff_1w',
+            'protest_count_rolling_mean_4w', 'protest_ratio_domestic'} <= drop
+    # all-scope family kept
+    assert 'protest_count_all' not in drop
+    assert 'protest_count_all_lag1' not in drop
+    assert 'protest_count_all_rolling_mean_4w' not in drop
+    assert 'protest_ratio' not in drop
+    # generic features kept
+    assert 'avg_tone' not in drop
+    assert 'is_AR' not in drop
+
+
+def test_non_feature_cols_domestic_drops_full_all_scope_family():
+    drop = non_feature_cols('domestic', columns=_SAMPLE_COLUMNS)
+    assert {'protest_count_all', 'protest_count_all_lag1',
+            'protest_count_all_diff_1w', 'protest_count_all_rolling_mean_4w',
+            'protest_ratio'} <= drop
+    assert 'protest_count' not in drop
+    assert 'protest_count_lag1' not in drop
+    assert 'protest_count_rolling_mean_4w' not in drop
+    assert 'protest_ratio_domestic' not in drop
 
 
 def test_time_split_no_overlap():
@@ -51,19 +109,24 @@ def test_time_split_no_overlap():
     assert train['week_start'].max() < test['week_start'].min()
 
 
-def test_prepare_xy_drops_non_features():
+def test_prepare_xy_all_scope_keeps_protest_count_all():
     df = _make_dummy()
     df = add_target(df)
-    X, _y, _ = prepare_xy(df)
-    # protest_count (domestic legacy) excluded
-    assert 'protest_count' not in X.columns
-    # protest_count_next_week (target) excluded
-    assert 'protest_count_next_week' not in X.columns
-    # metadata excluded
+    X, _y, _ = prepare_xy(df, scope='all')
+    assert 'protest_count' not in X.columns           # domestic-only legacy
+    assert 'protest_count_next_week' not in X.columns  # target
     assert 'country' not in X.columns
     assert 'week_start' not in X.columns
-    # current-week protest_count_all is a legitimate AR feature (Phase 1)
-    assert 'protest_count_all' in X.columns
+    assert 'protest_count_all' in X.columns            # current-week AR feature
+
+
+def test_prepare_xy_domestic_scope_keeps_protest_count():
+    df = _make_dummy()
+    df = add_target(df, scope='domestic')
+    X, _y, _ = prepare_xy(df, scope='domestic')
+    assert 'protest_count_all' not in X.columns         # excluded under domestic
+    assert 'protest_count_next_week' not in X.columns   # target
+    assert 'protest_count' in X.columns                 # current-week AR feature
 
 
 # ---------------------------------------------------------------------------

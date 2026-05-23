@@ -19,29 +19,100 @@ from src.constants import TRAIN_RATIO
 TARGET_COL = 'protest_count_next_week'
 
 TransformKind = Literal['raw', 'log1p']
+ScopeKind = Literal['all', 'domestic']
 
-NON_FEATURE_COLS = {
-    'week_start', 'country',
-    # protest_count is the domestic-only legacy column; excluded so the
-    # model does not see two scopes of the same signal.
-    'protest_count',
-    # protest_count_all (current-week, all-scope) IS a legitimate
-    # autoregressive feature: target is protest_count_all.shift(-1) per
-    # country, so using week-t's value to predict week-(t+1) is not leakage.
-    TARGET_COL,
+# Source column for the next-week target, keyed by target scope.
+TARGET_SOURCE_BY_SCOPE: dict[str, str] = {
+    'all': 'protest_count_all',
+    'domestic': 'protest_count',
 }
 
+# Metadata columns that are never features regardless of scope.
+_METADATA_COLS = frozenset({'week_start', 'country', TARGET_COL})
 
-def add_target(df: pd.DataFrame) -> pd.DataFrame:
-    """Add the next-week target as protest_count_all.shift(-1) per country.
 
-    Uses protest_count_all (all events in the country) rather than the
-    domestic-only protest_count, so the target stays on the same scope as
-    the conflict-structure features (avg_tone, avg_goldstein, n_material_conf
-    are all all-events-scope).
+def _cross_scope_feature_columns(scope: str, columns: list[str]) -> set[str]:
+    """Return all columns in ``columns`` that belong to the OTHER target scope.
+
+    With Phase 2c there are two parallel autoregressive families:
+        protest_count_all*       (all-scope: current week, lag, rolling, diff, ratio)
+        protest_count*           (domestic: current week, lag, rolling, diff, ratio)
+    The ``protest_count_all*`` family is a strict prefix superset of
+    ``protest_count*`` so we cannot match by 'startswith' alone; instead we
+    enumerate the cross-scope family explicitly.
     """
+    if scope == 'all':
+        # Drop the domestic family but keep the all-scope family. The all-scope
+        # family also starts with 'protest_count' so we have to exclude any
+        # column that starts with 'protest_count_all'.
+        return {
+            c for c in columns
+            if c.startswith('protest_count') and not c.startswith('protest_count_all')
+        } | {
+            c for c in columns
+            if c == 'protest_ratio_domestic'
+        }
+    if scope == 'domestic':
+        return {
+            c for c in columns
+            if c.startswith('protest_count_all')
+        } | {
+            c for c in columns
+            if c == 'protest_ratio'
+        }
+    raise ValueError(f"unknown target scope: {scope!r}")
+
+
+def non_feature_cols(
+    scope: str = 'all',
+    columns: list[str] | None = None,
+) -> frozenset[str]:
+    """Columns excluded from the feature matrix for the given target scope.
+
+    Always excludes the metadata columns and the target column.
+
+    When ``columns`` is provided, also excludes every column that belongs to
+    the OTHER target scope's autoregressive feature family. This keeps the
+    all-branch model from training on domestic AR features (which add noise
+    correlated with the target but only at the domestic scope) and vice
+    versa. See :func:`_cross_scope_feature_columns`.
+
+    Without ``columns`` the function returns only the metadata/target set,
+    matching the legacy single-scope behaviour.
+    """
+    if scope not in TARGET_SOURCE_BY_SCOPE:
+        raise ValueError(f"unknown target scope: {scope!r}")
+    base = set(_METADATA_COLS)
+    if columns is not None:
+        base |= _cross_scope_feature_columns(scope, columns)
+    return frozenset(base)
+
+
+# Legacy alias preserved so importers that only need the default (all-scope)
+# metadata/target exclusion set keep working unchanged.
+NON_FEATURE_COLS = non_feature_cols('all')
+
+
+def add_target(df: pd.DataFrame, scope: str = 'all') -> pd.DataFrame:
+    """Add the next-week protest target as ``shift(-1)`` per country.
+
+    The source column is chosen by ``scope``:
+    - 'all'      -> ``protest_count_all`` (current ML main line)
+    - 'domestic' -> ``protest_count``     (Actor1=Actor2=country, domestic only)
+
+    The target column name is always ``TARGET_COL`` regardless of scope,
+    so downstream metric / prediction schemas do not change between branches.
+    """
+    if scope not in TARGET_SOURCE_BY_SCOPE:
+        raise ValueError(f"unknown target scope: {scope!r}")
+    source_col = TARGET_SOURCE_BY_SCOPE[scope]
+    if source_col not in df.columns:
+        raise KeyError(
+            f"add_target(scope={scope!r}) needs column {source_col!r} "
+            f"but it is not in df.columns"
+        )
     df = df.sort_values(['country', 'week_start']).copy()
-    df[TARGET_COL] = df.groupby('country')['protest_count_all'].shift(-1)
+    df[TARGET_COL] = df.groupby('country')[source_col].shift(-1)
     return df
 
 
@@ -61,12 +132,22 @@ def time_train_test_split(
     return train, test
 
 
-def prepare_xy(df: pd.DataFrame, target: str = TARGET_COL) -> tuple:
+def prepare_xy(
+    df: pd.DataFrame,
+    scope: str = 'all',
+    target: str = TARGET_COL,
+) -> tuple:
     """Drop non-feature columns and rows with NaN in features or target.
 
-    Returns (X, y) plus the row mask (so callers can recover original metadata).
+    Cross-scope autoregressive features (e.g. domestic ``protest_count_lag*``
+    when training the all-scope branch) are pruned by passing ``df.columns``
+    to :func:`non_feature_cols`, so each branch only sees its own AR family.
+
+    Returns (X, y, mask) where ``mask`` lets callers recover the original
+    metadata rows that survived NaN filtering.
     """
-    feature_cols = [c for c in df.columns if c not in NON_FEATURE_COLS]
+    drop = non_feature_cols(scope, columns=list(df.columns))
+    feature_cols = [c for c in df.columns if c not in drop]
     X = df[feature_cols].copy()
     y = df[target].copy()
     mask = y.notna() & X.notna().all(axis=1)

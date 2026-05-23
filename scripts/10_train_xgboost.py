@@ -1,33 +1,36 @@
 """Train XGBoost main model on feature_matrix and persist artifacts for SHAP.
 
+Branches (CLI flags):
+- ``--target-scope {all,domestic}``     which protest count to predict
+- ``--target-transform {raw,log1p}``    forward transform on y
+
 Run examples:
     python scripts/10_train_xgboost.py
     python scripts/10_train_xgboost.py --target-transform log1p
+    python scripts/10_train_xgboost.py --target-scope domestic --target-transform log1p
 
-Output (raw transform — backward compatible top-level paths):
-- output/ml_results/xgboost_model.joblib
-- output/ml_results/X_test.parquet
-- output/ml_results/y_test.parquet
-- output/ml_results/xgboost_predictions.parquet
-- output/ml_results/xgboost_metrics.parquet
+Outputs (always written to output/ml_results/{scope}/{transform}/):
+- xgboost_model.joblib
+- X_test.parquet
+- y_test.parquet
+- xgboost_predictions.parquet
+- xgboost_metrics.parquet
 
-Output (log1p transform — suffixed paths):
-- output/ml_results/xgboost_model_log1p.joblib
-- output/ml_results/X_test_log1p.parquet
-- output/ml_results/y_test_log1p.parquet
-- output/ml_results/xgboost_predictions_log1p.parquet
-- output/ml_results/xgboost_metrics_log1p.parquet
+For the default branch (scope=all, transform=raw) the same files are ALSO
+mirrored to the legacy output/ml_results/ top level for backward compat with
+other members' SHAP / figure scripts.
 """
 from __future__ import annotations
 
 import argparse
+import shutil
 
 import joblib
 import numpy as np
 import pandas as pd
 
-from src.constants import OUTPUT_DIR
 from src.data_loader import load_feature_matrix
+from src.ml_cli import BranchPaths, add_branch_args, resolve_paths
 from src.ml_models import (
     add_target,
     apply_target_transform,
@@ -49,13 +52,25 @@ DEFAULT_PARAMS = {
 }
 
 
-def main(params: dict | None = None, transform: str = 'raw') -> None:
+def _mirror_to_top_level(paths: BranchPaths, filenames: list[str]) -> None:
+    """Copy branch outputs to the legacy top-level paths when applicable."""
+    if not paths.also_top_level:
+        return
+    for name in filenames:
+        src = paths.out_dir / name
+        if src.exists():
+            shutil.copy2(src, paths.legacy_out_dir / name)
+
+
+def main(scope: str, transform: str, params: dict | None = None) -> None:
+    paths = resolve_paths(scope=scope, transform=transform)
+
     df = load_feature_matrix()
-    df = add_target(df)
+    df = add_target(df, scope=scope)
     train, test = time_train_test_split(df)
 
-    X_train, y_train, _ = prepare_xy(train)
-    X_test, y_test, mask_test = prepare_xy(test)
+    X_train, y_train, _ = prepare_xy(train, scope=scope)
+    X_test, y_test, mask_test = prepare_xy(test, scope=scope)
 
     y_train_model = apply_target_transform(y_train, transform)
     model = train_xgboost(X_train, pd.Series(y_train_model), params or DEFAULT_PARAMS)
@@ -70,51 +85,51 @@ def main(params: dict | None = None, transform: str = 'raw') -> None:
     metrics = evaluate_predictions(pred_df)
 
     print(
-        f"XGBoost transform={transform}: "
+        f"XGBoost scope={scope} transform={transform}: "
         f"rmse={metrics['rmse']:.4f} mae={metrics['mae']:.4f} "
         f"dir_acc={metrics['directional_accuracy']:.4f}"
     )
     print("Per-country dir acc:", metrics['per_country_directional'])
-
-    suffix = '' if transform == 'raw' else f'_{transform}'
-    out_dir = OUTPUT_DIR / "ml_results"
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     joblib.dump(
         {
             'model': model,
             'feature_cols': list(X_train.columns),
             'transform': transform,
+            'scope': scope,
         },
-        out_dir / f"xgboost_model{suffix}.joblib",
+        paths.out_dir / "xgboost_model.joblib",
     )
-    X_test.to_parquet(out_dir / f"X_test{suffix}.parquet")
-    y_test.to_frame(name='actual').to_parquet(out_dir / f"y_test{suffix}.parquet")
-    pred_df.to_parquet(
-        out_dir / f"xgboost_predictions{suffix}.parquet", index=False
-    )
+    X_test.to_parquet(paths.out_dir / "X_test.parquet")
+    y_test.to_frame(name='actual').to_parquet(paths.out_dir / "y_test.parquet")
+    pred_df.to_parquet(paths.out_dir / "xgboost_predictions.parquet", index=False)
 
     metric_row = {
+        'scope': scope,
         'transform': transform,
         'rmse': metrics['rmse'],
         'mae': metrics['mae'],
         'directional_accuracy': metrics['directional_accuracy'],
     }
     pd.DataFrame([metric_row]).to_parquet(
-        out_dir / f"xgboost_metrics{suffix}.parquet", index=False
+        paths.out_dir / "xgboost_metrics.parquet", index=False
     )
+
+    _mirror_to_top_level(paths, [
+        "xgboost_model.joblib",
+        "X_test.parquet",
+        "y_test.parquet",
+        "xgboost_predictions.parquet",
+        "xgboost_metrics.parquet",
+    ])
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        '--target-transform',
-        choices=['raw', 'log1p'],
-        default='raw',
-    )
+    add_branch_args(parser)
     return parser
 
 
 if __name__ == '__main__':
     args = _build_parser().parse_args()
-    main(transform=args.target_transform)
+    main(scope=args.target_scope, transform=args.target_transform)

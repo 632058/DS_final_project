@@ -30,7 +30,14 @@ ROLLING_LAG_TARGETS = [
     'avg_tone',
     'avg_goldstein',
     'n_material_conf',
+    # All-scope protest autoregressive features (Phase 1) — feed the all-target
+    # branch of the ML pipeline.
     'protest_count_all',
+    # Domestic protest autoregressive features (Phase 2c) — feed the
+    # domestic-target branch. The all branch also sees these as additional
+    # noise features; src.ml_models.non_feature_cols handles cross-scope
+    # exclusion of the current-week source column.
+    'protest_count',
 ]
 
 
@@ -165,9 +172,13 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # 2. Conflict ratios (avoid divide-by-zero)
     n = df['n_events'].replace(0, np.nan)
-    df['material_conf_ratio'] = df['n_material_conf'] / n
-    df['verbal_conf_ratio']   = df['n_verbal_conf']   / n
-    df['protest_ratio']       = df['protest_count_all'] / n
+    df['material_conf_ratio']    = df['n_material_conf'] / n
+    df['verbal_conf_ratio']      = df['n_verbal_conf']   / n
+    # All-scope protest ratio (legacy name retained for backward compat).
+    df['protest_ratio']          = df['protest_count_all'] / n
+    # Domestic protest ratio added in Phase 2c so the domestic branch has its
+    # own normalised count feature.
+    df['protest_ratio_domestic'] = df['protest_count']     / n
 
     # 3. Seasonal features
     df['week_of_year'] = df['week_start'].dt.isocalendar().week.astype(int)

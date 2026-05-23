@@ -1,30 +1,35 @@
 """Train Lasso baseline regressor on feature_matrix.
 
+Branches (CLI flags):
+- ``--target-scope {all,domestic}``     which protest count to predict
+- ``--target-transform {raw,log1p}``    forward transform on y
+
 Run examples:
     python scripts/09_train_lasso.py
     python scripts/09_train_lasso.py --target-transform log1p
-    python scripts/09_train_lasso.py --alpha 0.5 --target-transform raw
+    python scripts/09_train_lasso.py --target-scope domestic --target-transform log1p
+    python scripts/09_train_lasso.py --alpha 0.5
 
-Output (raw transform — backward compatible top-level paths):
-- output/ml_results/lasso_baseline.joblib
-- output/ml_results/lasso_metrics.parquet
-- output/ml_results/lasso_predictions.parquet
+Outputs (always written to output/ml_results/{scope}/{transform}/):
+- lasso_baseline.joblib
+- lasso_metrics.parquet
+- lasso_predictions.parquet
 
-Output (log1p transform — suffixed paths, dual-branch infra arrives in Phase 2b):
-- output/ml_results/lasso_baseline_log1p.joblib
-- output/ml_results/lasso_metrics_log1p.parquet
-- output/ml_results/lasso_predictions_log1p.parquet
+For the default branch (scope=all, transform=raw) the same files are ALSO
+mirrored to the legacy output/ml_results/ top level for backward compat with
+other members' scripts.
 """
 from __future__ import annotations
 
 import argparse
+import shutil
 
 import joblib
 import numpy as np
 import pandas as pd
 
-from src.constants import OUTPUT_DIR
 from src.data_loader import load_feature_matrix
+from src.ml_cli import BranchPaths, add_branch_args, resolve_paths
 from src.ml_models import (
     add_target,
     apply_target_transform,
@@ -36,13 +41,25 @@ from src.ml_models import (
 )
 
 
-def main(alpha: float = 1.0, transform: str = 'raw') -> None:
+def _mirror_to_top_level(paths: BranchPaths, filenames: list[str]) -> None:
+    """Copy branch outputs to the legacy top-level paths when applicable."""
+    if not paths.also_top_level:
+        return
+    for name in filenames:
+        src = paths.out_dir / name
+        if src.exists():
+            shutil.copy2(src, paths.legacy_out_dir / name)
+
+
+def main(alpha: float, scope: str, transform: str) -> None:
+    paths = resolve_paths(scope=scope, transform=transform)
+
     df = load_feature_matrix()
-    df = add_target(df)
+    df = add_target(df, scope=scope)
     train, test = time_train_test_split(df)
 
-    X_train, y_train, _ = prepare_xy(train)
-    X_test, y_test, mask_test = prepare_xy(test)
+    X_train, y_train, _ = prepare_xy(train, scope=scope)
+    X_test, y_test, mask_test = prepare_xy(test, scope=scope)
 
     y_train_model = apply_target_transform(y_train, transform)
     model, scaler = train_lasso(X_train, pd.Series(y_train_model), alpha=alpha)
@@ -57,15 +74,11 @@ def main(alpha: float = 1.0, transform: str = 'raw') -> None:
     metrics = evaluate_predictions(pred_df)
 
     print(
-        f"Lasso alpha={alpha} transform={transform}: "
+        f"Lasso scope={scope} transform={transform} alpha={alpha}: "
         f"rmse={metrics['rmse']:.4f} mae={metrics['mae']:.4f} "
         f"dir_acc={metrics['directional_accuracy']:.4f}"
     )
     print("Per-country dir acc:", metrics['per_country_directional'])
-
-    suffix = '' if transform == 'raw' else f'_{transform}'
-    out_dir = OUTPUT_DIR / "ml_results"
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     joblib.dump(
         {
@@ -73,37 +86,39 @@ def main(alpha: float = 1.0, transform: str = 'raw') -> None:
             'scaler': scaler,
             'feature_cols': list(X_train.columns),
             'transform': transform,
+            'scope': scope,
             'alpha': alpha,
         },
-        out_dir / f"lasso_baseline{suffix}.joblib",
+        paths.out_dir / "lasso_baseline.joblib",
     )
 
     metric_row = {
-        'alpha': alpha,
+        'scope': scope,
         'transform': transform,
+        'alpha': alpha,
         'rmse': metrics['rmse'],
         'mae': metrics['mae'],
         'directional_accuracy': metrics['directional_accuracy'],
     }
     pd.DataFrame([metric_row]).to_parquet(
-        out_dir / f"lasso_metrics{suffix}.parquet", index=False
+        paths.out_dir / "lasso_metrics.parquet", index=False
     )
-    pred_df.to_parquet(
-        out_dir / f"lasso_predictions{suffix}.parquet", index=False
-    )
+    pred_df.to_parquet(paths.out_dir / "lasso_predictions.parquet", index=False)
+
+    _mirror_to_top_level(paths, [
+        "lasso_baseline.joblib",
+        "lasso_metrics.parquet",
+        "lasso_predictions.parquet",
+    ])
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--alpha', type=float, default=1.0)
-    parser.add_argument(
-        '--target-transform',
-        choices=['raw', 'log1p'],
-        default='raw',
-    )
+    add_branch_args(parser)
     return parser
 
 
 if __name__ == '__main__':
     args = _build_parser().parse_args()
-    main(alpha=args.alpha, transform=args.target_transform)
+    main(alpha=args.alpha, scope=args.target_scope, transform=args.target_transform)
