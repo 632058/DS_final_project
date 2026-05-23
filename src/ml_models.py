@@ -18,7 +18,13 @@ TARGET_COL = 'protest_count_next_week'
 
 NON_FEATURE_COLS = {
     'week_start', 'country',
-    'protest_count', 'protest_count_all', TARGET_COL,
+    # protest_count is the domestic-only legacy column; excluded so the
+    # model does not see two scopes of the same signal.
+    'protest_count',
+    # protest_count_all (current-week, all-scope) IS a legitimate
+    # autoregressive feature: target is protest_count_all.shift(-1) per
+    # country, so using week-t's value to predict week-(t+1) is not leakage.
+    TARGET_COL,
 }
 
 

@@ -26,7 +26,12 @@ AVG_COLUMNS = [
     'weighted_tone', 'weighted_goldstein',
 ]
 
-ROLLING_LAG_TARGETS = ['avg_tone', 'avg_goldstein', 'n_material_conf']
+ROLLING_LAG_TARGETS = [
+    'avg_tone',
+    'avg_goldstein',
+    'n_material_conf',
+    'protest_count_all',
+]
 
 
 def build_feature_matrix(df_weekly: pd.DataFrame) -> pd.DataFrame:
