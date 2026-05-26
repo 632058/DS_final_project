@@ -28,7 +28,14 @@ import pandas as pd
 
 from src.constants import FIPS_COUNTRIES
 from src.data_loader import load_feature_matrix
-from src.ml_cli import add_branch_args, resolve_paths
+from src.ml_cli import (
+    add_branch_args,
+    add_objective_args,
+    build_xgb_objective_params,
+    objective_suffix,
+    resolve_paths,
+    validate_objective_args,
+)
 from src.ml_models import (
     add_target,
     apply_target_transform,
@@ -51,6 +58,23 @@ DEFAULT_PARAMS = {
     'random_state': 42,
     'n_jobs': -1,
 }
+
+
+def _build_xgb_params(
+    objective: str,
+    tweedie_variance_power: float,
+    quantile_alpha: float,
+) -> dict:
+    """Merge DEFAULT_PARAMS with objective-specific XGBoost settings."""
+    params = dict(DEFAULT_PARAMS)
+    params.update(
+        build_xgb_objective_params(
+            objective,
+            tweedie_variance_power=tweedie_variance_power,
+            quantile_alpha=quantile_alpha,
+        )
+    )
+    return params
 
 
 def _per_country_metrics(pred_df: pd.DataFrame) -> dict[str, dict]:
@@ -96,18 +120,37 @@ def _train_and_predict(
     return pred_df, evaluate_predictions(pred_df)
 
 
-def main(scope: str, transform: str) -> None:
+def main(
+    scope: str,
+    transform: str,
+    objective: str,
+    tweedie_variance_power: float,
+    quantile_alpha: float,
+) -> None:
+    validate_objective_args(
+        objective, transform, tweedie_variance_power, quantile_alpha
+    )
+
     paths = resolve_paths(scope=scope, transform=transform)
+    suffix = objective_suffix(
+        objective,
+        tweedie_variance_power=tweedie_variance_power,
+        quantile_alpha=quantile_alpha,
+    )
+    params = _build_xgb_params(objective, tweedie_variance_power, quantile_alpha)
 
     fm = load_feature_matrix()
 
     # --- Pooled baseline ---
-    pooled_pred, pooled_overall = _train_and_predict(fm, scope, transform, DEFAULT_PARAMS)
+    pooled_pred, pooled_overall = _train_and_predict(fm, scope, transform, params)
     pooled_per_country = _per_country_metrics(pooled_pred)
 
     # --- Per-country models ---
     rows = []
-    print(f"\n=== Per-country diagnostic (scope={scope}, transform={transform}) ===")
+    print(
+        f"\n=== Per-country diagnostic "
+        f"(scope={scope}, transform={transform}, objective={objective}) ==="
+    )
     print(f"Pooled overall: rmse={pooled_overall['rmse']:.3f} "
           f"mae={pooled_overall['mae']:.3f} "
           f"dir_acc={pooled_overall['directional_accuracy']:.3f}")
@@ -121,7 +164,7 @@ def main(scope: str, transform: str) -> None:
         sub = sub.drop(columns=one_hots)
 
         # Time split inside this country
-        sub_pred, _ = _train_and_predict(sub, scope, transform, DEFAULT_PARAMS)
+        sub_pred, _ = _train_and_predict(sub, scope, transform, params)
         per_country_only = _per_country_metrics(sub_pred)[country]
         n_train_country = (sub['week_start'] < sub_pred['week_start'].min()).sum()
 
@@ -137,13 +180,14 @@ def main(scope: str, transform: str) -> None:
             'per_country_mae': per_country_only['mae'],
             'per_country_dir_acc': per_country_only['dir_acc'],
             'rmse_delta_vs_pooled': per_country_only['rmse'] - pool_m['rmse'],
+            'objective': objective,
         }
         rows.append(row)
 
     out = pd.DataFrame(rows)
     print("\n", out.round(3).to_string(index=False))
 
-    out_path = paths.out_dir / "per_country_xgb_diagnostic.parquet"
+    out_path = paths.out_dir / f"per_country_xgb_diagnostic{suffix}.parquet"
     out.to_parquet(out_path, index=False)
     print(f"\nSaved {out_path}")
 
@@ -151,9 +195,16 @@ def main(scope: str, transform: str) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     add_branch_args(parser)
+    add_objective_args(parser)
     return parser
 
 
 if __name__ == '__main__':
     args = _build_parser().parse_args()
-    main(scope=args.target_scope, transform=args.target_transform)
+    main(
+        scope=args.target_scope,
+        transform=args.target_transform,
+        objective=args.objective,
+        tweedie_variance_power=args.tweedie_variance_power,
+        quantile_alpha=args.quantile_alpha,
+    )

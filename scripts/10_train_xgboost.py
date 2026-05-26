@@ -38,14 +38,21 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import sys
 
 import joblib
 import numpy as np
 import pandas as pd
 
 from src.data_loader import load_feature_matrix
-from src.ml_cli import BranchPaths, add_branch_args, resolve_paths
+from src.ml_cli import (
+    BranchPaths,
+    add_branch_args,
+    add_objective_args,
+    build_xgb_objective_params,
+    objective_suffix,
+    resolve_paths,
+    validate_objective_args,
+)
 from src.ml_models import (
     add_target,
     apply_target_transform,
@@ -66,38 +73,6 @@ DEFAULT_PARAMS = {
     'n_jobs': -1,
 }
 
-OBJECTIVE_CHOICES = ('squarederror', 'poisson', 'tweedie', 'quantile')
-
-# XGBoost objective names per CLI alias. Quantile uses the 2.x "quantileerror"
-# loss which requires tree_method='hist'.
-_XGB_OBJECTIVE = {
-    'squarederror': 'reg:squarederror',
-    'poisson': 'count:poisson',
-    'tweedie': 'reg:tweedie',
-    'quantile': 'reg:quantileerror',
-}
-
-
-def _objective_suffix(
-    objective: str,
-    tweedie_variance_power: float,
-    quantile_alpha: float,
-) -> str:
-    """Suffix appended to output filenames to disambiguate objectives.
-
-    Empty for ``squarederror`` so the canonical filenames keep working with
-    downstream scripts that still hard-code them.
-    """
-    if objective == 'squarederror':
-        return ''
-    if objective == 'poisson':
-        return '_poisson'
-    if objective == 'tweedie':
-        return f'_tweedie_{tweedie_variance_power:g}'
-    if objective == 'quantile':
-        return f'_quantile_{quantile_alpha:g}'
-    raise ValueError(f"unknown objective: {objective!r}")
-
 
 def _build_xgb_params(
     objective: str,
@@ -106,13 +81,13 @@ def _build_xgb_params(
 ) -> dict:
     """Merge DEFAULT_PARAMS with objective-specific XGBoost settings."""
     params = dict(DEFAULT_PARAMS)
-    params['objective'] = _XGB_OBJECTIVE[objective]
-    if objective == 'tweedie':
-        params['tweedie_variance_power'] = tweedie_variance_power
-    elif objective == 'quantile':
-        params['quantile_alpha'] = quantile_alpha
-        # XGBoost 2.x quantile loss requires the histogram tree method.
-        params['tree_method'] = 'hist'
+    params.update(
+        build_xgb_objective_params(
+            objective,
+            tweedie_variance_power=tweedie_variance_power,
+            quantile_alpha=quantile_alpha,
+        )
+    )
     return params
 
 
@@ -133,16 +108,16 @@ def main(
     tweedie_variance_power: float,
     quantile_alpha: float,
 ) -> None:
-    # Forbid combinations that double-transform a heavy-tailed count target.
-    if objective in ('poisson', 'tweedie') and transform != 'raw':
-        raise SystemExit(
-            f"--objective {objective} requires --target-transform raw "
-            f"(got {transform!r}). Poisson/Tweedie already model the count "
-            f"distribution; applying log1p on top double-transforms the target."
-        )
+    validate_objective_args(
+        objective, transform, tweedie_variance_power, quantile_alpha
+    )
 
     paths = resolve_paths(scope=scope, transform=transform)
-    suffix = _objective_suffix(objective, tweedie_variance_power, quantile_alpha)
+    suffix = objective_suffix(
+        objective,
+        tweedie_variance_power=tweedie_variance_power,
+        quantile_alpha=quantile_alpha,
+    )
     xgb_params = _build_xgb_params(objective, tweedie_variance_power, quantile_alpha)
 
     df = load_feature_matrix()
@@ -229,46 +204,12 @@ def main(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     add_branch_args(parser)
-    parser.add_argument(
-        '--objective',
-        choices=OBJECTIVE_CHOICES,
-        default='squarederror',
-        help=(
-            "XGBoost loss. squarederror is the legacy default; "
-            "poisson/tweedie are count-aware (require --target-transform raw); "
-            "quantile fits an asymmetric pinball loss at --quantile-alpha."
-        ),
-    )
-    parser.add_argument(
-        '--tweedie-variance-power',
-        type=float,
-        default=1.5,
-        help="Tweedie variance power in (1, 2). 1=Poisson, 2=Gamma.",
-    )
-    parser.add_argument(
-        '--quantile-alpha',
-        type=float,
-        default=0.5,
-        help="Quantile level in (0, 1). 0.5 is median regression.",
-    )
+    add_objective_args(parser)
     return parser
 
 
 if __name__ == '__main__':
     args = _build_parser().parse_args()
-    if args.objective == 'tweedie' and not (1.0 < args.tweedie_variance_power < 2.0):
-        print(
-            f"ERROR: --tweedie-variance-power must be in (1, 2), got "
-            f"{args.tweedie_variance_power}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    if args.objective == 'quantile' and not (0.0 < args.quantile_alpha < 1.0):
-        print(
-            f"ERROR: --quantile-alpha must be in (0, 1), got {args.quantile_alpha}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
     main(
         scope=args.target_scope,
         transform=args.target_transform,

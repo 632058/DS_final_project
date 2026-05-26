@@ -6,16 +6,19 @@ over-prediction and Turkey under-prediction patterns are visible at a glance.
 Branches (CLI flags):
 - ``--target-scope {all,domestic}``
 - ``--target-transform {raw,log1p}``
+- ``--objective {squarederror,poisson,tweedie,quantile}``
 
 Inputs (output/ml_results/{scope}/{transform}/):
-- xgboost_predictions.parquet
-- xgboost_metrics.parquet
+- xgboost_predictions{_objective_suffix}.parquet
+- xgboost_metrics{_objective_suffix}.parquet
 
 Outputs:
-- figures/{scope}/fig5_pred_vs_actual_{transform}.png
-- figures/{scope}/fig6_residual_plot_{transform}.png
-- For the default branch (scope=all, transform=raw) also mirrored to the
-  legacy paths figures/fig5_pred_vs_actual.png and figures/fig6_residual_plot.png.
+- figures/{scope}/fig5_pred_vs_actual_{transform}{_objective_suffix}.png
+- figures/{scope}/fig6_residual_plot_{transform}{_objective_suffix}.png
+- figures/{scope}/fig5_per_country_{transform}{_objective_suffix}.png
+- For the default branch (scope=all, transform=raw, objective=squarederror)
+  also mirrored to legacy figures/fig5_pred_vs_actual.png, fig6_residual_plot.png,
+  and fig5_per_country.png so other members' scripts keep working.
 """
 from __future__ import annotations
 
@@ -28,7 +31,13 @@ import numpy as np
 import pandas as pd
 
 from src.constants import COUNTRY_COLORS, COUNTRY_NAMES, FIPS_COUNTRIES
-from src.ml_cli import add_branch_args, resolve_paths
+from src.ml_cli import (
+    add_branch_args,
+    add_objective_args,
+    objective_suffix,
+    resolve_paths,
+    validate_objective_args,
+)
 from src.viz_template import apply_style
 
 
@@ -41,12 +50,26 @@ def _save(fig: plt.Figure, path: Path) -> None:
     fig.savefig(path, dpi=150, bbox_inches='tight')
 
 
-def main(scope: str, transform: str) -> None:
+def main(
+    scope: str,
+    transform: str,
+    objective: str,
+    tweedie_variance_power: float,
+    quantile_alpha: float,
+) -> None:
+    validate_objective_args(
+        objective, transform, tweedie_variance_power, quantile_alpha
+    )
     apply_style()
     paths = resolve_paths(scope=scope, transform=transform)
+    suffix = objective_suffix(
+        objective,
+        tweedie_variance_power=tweedie_variance_power,
+        quantile_alpha=quantile_alpha,
+    )
 
-    df = pd.read_parquet(paths.out_dir / "xgboost_predictions.parquet")
-    metrics = pd.read_parquet(paths.out_dir / "xgboost_metrics.parquet").iloc[0]
+    df = pd.read_parquet(paths.out_dir / f"xgboost_predictions{suffix}.parquet")
+    metrics = pd.read_parquet(paths.out_dir / f"xgboost_metrics{suffix}.parquet").iloc[0]
 
     per_country: dict[str, tuple[int, float]] = {}
     for code, g in df.groupby('country'):
@@ -72,14 +95,14 @@ def main(scope: str, transform: str) -> None:
     ax.set_ylim(-5, lim)
     ax.set_xlabel('Actual protest count')
     ax.set_ylabel('Predicted protest count')
-    title_suffix = f" [{scope}/{transform}]"
+    title_suffix = f" [{scope}/{transform}/{objective}]"
     ax.set_title(
         f'XGBoost: Predicted vs Actual  '
         f'(overall RMSE={metrics["rmse"]:.2f}, MAE={metrics["mae"]:.2f}){title_suffix}'
     )
     ax.legend(loc='upper left', fontsize=9)
     fig5.tight_layout()
-    fig5_path = paths.fig_dir / f"fig5_pred_vs_actual_{transform}.png"
+    fig5_path = paths.fig_dir / f"fig5_pred_vs_actual_{transform}{suffix}.png"
     _save(fig5, fig5_path)
     plt.close(fig5)
 
@@ -123,7 +146,7 @@ def main(scope: str, transform: str) -> None:
     axes[1].legend(loc='upper right', fontsize=9)
 
     fig6.tight_layout()
-    fig6_path = paths.fig_dir / f"fig6_residual_plot_{transform}.png"
+    fig6_path = paths.fig_dir / f"fig6_residual_plot_{transform}{suffix}.png"
     _save(fig6, fig6_path)
     plt.close(fig6)
 
@@ -156,12 +179,12 @@ def main(scope: str, transform: str) -> None:
         ax.set_xlabel('Actual')
     sm_axes[0].set_ylabel('Predicted')
     fig5b.suptitle(
-        f"XGBoost predictions per country  [{scope}/{transform}]  "
+        f"XGBoost predictions per country  [{scope}/{transform}/{objective}]  "
         f"(overall RMSE={metrics['rmse']:.2f}, MAE={metrics['mae']:.2f})",
         y=1.02, fontsize=12,
     )
     fig5b.tight_layout()
-    fig5b_path = paths.fig_dir / f"fig5_per_country_{transform}.png"
+    fig5b_path = paths.fig_dir / f"fig5_per_country_{transform}{suffix}.png"
     _save(fig5b, fig5b_path)
     plt.close(fig5b)
 
@@ -169,7 +192,9 @@ def main(scope: str, transform: str) -> None:
     print(f"Saved {fig6_path}")
     print(f"Saved {fig5b_path}")
 
-    if paths.also_top_level:
+    # Only the canonical (squarederror) figures get mirrored to the legacy
+    # top-level paths so the report's main figures stay consistent.
+    if paths.also_top_level and objective == 'squarederror':
         legacy_fig5 = paths.legacy_fig_dir / "fig5_pred_vs_actual.png"
         legacy_fig6 = paths.legacy_fig_dir / "fig6_residual_plot.png"
         legacy_fig5b = paths.legacy_fig_dir / "fig5_per_country.png"
@@ -184,9 +209,16 @@ def main(scope: str, transform: str) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     add_branch_args(parser)
+    add_objective_args(parser)
     return parser
 
 
 if __name__ == '__main__':
     args = _build_parser().parse_args()
-    main(scope=args.target_scope, transform=args.target_transform)
+    main(
+        scope=args.target_scope,
+        transform=args.target_transform,
+        objective=args.objective,
+        tweedie_variance_power=args.tweedie_variance_power,
+        quantile_alpha=args.quantile_alpha,
+    )
