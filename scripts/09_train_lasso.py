@@ -4,11 +4,18 @@ Branches (CLI flags):
 - ``--target-scope {all,domestic}``     which protest count to predict
 - ``--target-transform {raw,log1p}``    forward transform on y
 
+By default the script runs :func:`train_lasso_cv` over the alpha grid
+``np.logspace(-3, 1, 9)`` with :class:`TimeSeriesSplit` (n_splits=5),
+which fixes the previous degeneracy where ``alpha=1.0`` on log1p targets
+collapsed every coefficient to zero. Pass ``--alpha`` to override the CV
+and fall back to a fixed regularization strength (matches the legacy
+single-alpha behaviour).
+
 Run examples:
     python scripts/09_train_lasso.py
     python scripts/09_train_lasso.py --target-transform log1p
     python scripts/09_train_lasso.py --target-scope domestic --target-transform log1p
-    python scripts/09_train_lasso.py --alpha 0.5
+    python scripts/09_train_lasso.py --alpha 0.5     # legacy fixed-alpha mode
 
 Outputs (always written to output/ml_results/{scope}/{transform}/):
 - lasso_baseline.joblib
@@ -31,6 +38,8 @@ import pandas as pd
 from src.data_loader import load_feature_matrix
 from src.ml_cli import BranchPaths, add_branch_args, resolve_paths
 from src.ml_models import (
+    DEFAULT_LASSO_CV_ALPHAS,
+    DEFAULT_LASSO_CV_SPLITS,
     add_target,
     apply_target_transform,
     evaluate_predictions,
@@ -38,6 +47,7 @@ from src.ml_models import (
     prepare_xy,
     time_train_test_split,
     train_lasso,
+    train_lasso_cv,
 )
 
 
@@ -51,7 +61,12 @@ def _mirror_to_top_level(paths: BranchPaths, filenames: list[str]) -> None:
             shutil.copy2(src, paths.legacy_out_dir / name)
 
 
-def main(alpha: float, scope: str, transform: str) -> None:
+def main(
+    scope: str,
+    transform: str,
+    alpha: float | None,
+    cv_splits: int,
+) -> None:
     paths = resolve_paths(scope=scope, transform=transform)
 
     df = load_feature_matrix()
@@ -62,7 +77,28 @@ def main(alpha: float, scope: str, transform: str) -> None:
     X_test, y_test, mask_test = prepare_xy(test, scope=scope)
 
     y_train_model = apply_target_transform(y_train, transform)
-    model, scaler = train_lasso(X_train, pd.Series(y_train_model), alpha=alpha)
+
+    if alpha is None:
+        model, scaler = train_lasso_cv(
+            X_train,
+            pd.Series(y_train_model),
+            alphas=DEFAULT_LASSO_CV_ALPHAS,
+            n_splits=cv_splits,
+        )
+        selected_alpha = float(model.alpha_)
+        cv_used = True
+        print(
+            f"LassoCV selected alpha={selected_alpha:.6f} "
+            f"from grid {DEFAULT_LASSO_CV_ALPHAS.tolist()} "
+            f"(TimeSeriesSplit n_splits={cv_splits})"
+        )
+    else:
+        model, scaler = train_lasso(X_train, pd.Series(y_train_model), alpha=alpha)
+        selected_alpha = float(alpha)
+        cv_used = False
+
+    n_nonzero = int((model.coef_ != 0).sum())
+    n_features = int(len(model.coef_))
 
     y_pred_model = model.predict(scaler.transform(X_test))
     y_pred = np.clip(invert_target_transform(y_pred_model, transform), 0, None)
@@ -74,7 +110,9 @@ def main(alpha: float, scope: str, transform: str) -> None:
     metrics = evaluate_predictions(pred_df)
 
     print(
-        f"Lasso scope={scope} transform={transform} alpha={alpha}: "
+        f"Lasso scope={scope} transform={transform} "
+        f"alpha={selected_alpha:.6f} cv={cv_used} "
+        f"nonzero={n_nonzero}/{n_features}: "
         f"rmse={metrics['rmse']:.4f} mae={metrics['mae']:.4f} "
         f"dir_acc={metrics['directional_accuracy']:.4f}"
     )
@@ -87,7 +125,10 @@ def main(alpha: float, scope: str, transform: str) -> None:
             'feature_cols': list(X_train.columns),
             'transform': transform,
             'scope': scope,
-            'alpha': alpha,
+            'alpha': selected_alpha,
+            'cv_used': cv_used,
+            'cv_alphas_grid': DEFAULT_LASSO_CV_ALPHAS.tolist() if cv_used else None,
+            'cv_n_splits': cv_splits if cv_used else None,
         },
         paths.out_dir / "lasso_baseline.joblib",
     )
@@ -95,7 +136,10 @@ def main(alpha: float, scope: str, transform: str) -> None:
     metric_row = {
         'scope': scope,
         'transform': transform,
-        'alpha': alpha,
+        'alpha': selected_alpha,
+        'cv_used': cv_used,
+        'n_nonzero_coefs': n_nonzero,
+        'n_features': n_features,
         'rmse': metrics['rmse'],
         'mae': metrics['mae'],
         'directional_accuracy': metrics['directional_accuracy'],
@@ -114,11 +158,30 @@ def main(alpha: float, scope: str, transform: str) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--alpha', type=float, default=0.01)
+    parser.add_argument(
+        '--alpha',
+        type=float,
+        default=None,
+        help=(
+            "Fixed regularization strength. If omitted (default), runs "
+            "LassoCV over np.logspace(-3, 1, 9) with TimeSeriesSplit."
+        ),
+    )
+    parser.add_argument(
+        '--cv-splits',
+        type=int,
+        default=DEFAULT_LASSO_CV_SPLITS,
+        help="TimeSeriesSplit n_splits for LassoCV (ignored when --alpha is set).",
+    )
     add_branch_args(parser)
     return parser
 
 
 if __name__ == '__main__':
     args = _build_parser().parse_args()
-    main(alpha=args.alpha, scope=args.target_scope, transform=args.target_transform)
+    main(
+        scope=args.target_scope,
+        transform=args.target_transform,
+        alpha=args.alpha,
+        cv_splits=args.cv_splits,
+    )

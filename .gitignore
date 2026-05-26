@@ -44,3 +44,5 @@ report/*.pdf
 
 # AI tools
 CLAUDE.md
+
+docs/model_evaluation_2026-05-24.md
