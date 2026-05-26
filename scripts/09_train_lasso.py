@@ -114,7 +114,7 @@ def main(alpha: float, scope: str, transform: str) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--alpha', type=float, default=1.0)
+    parser.add_argument('--alpha', type=float, default=0.01)
     add_branch_args(parser)
     return parser
 

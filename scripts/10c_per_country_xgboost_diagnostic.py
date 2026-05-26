@@ -43,11 +43,15 @@ from src.ml_models import (
 # Duplicated here because Python module names cannot start with a digit, so
 # scripts/10_train_xgboost.py cannot be imported as a regular module.
 DEFAULT_PARAMS = {
-    'n_estimators': 300,
-    'max_depth': 3,
-    'learning_rate': 0.03,
-    'subsample': 0.8,
-    'colsample_bytree': 0.8,
+    'n_estimators': 500,
+    'max_depth': 5,
+    'learning_rate': 0.15,
+    'subsample': 0.7,
+    'colsample_bytree': 0.6,
+    'min_child_weight': 5,
+    'gamma': 0.0,
+    'reg_alpha': 1.0,
+    'reg_lambda': 20.0,
     'random_state': 42,
     'n_jobs': -1,
 }
@@ -81,6 +85,7 @@ def _train_and_predict(
     """Train XGBoost on df, return predictions DataFrame and overall metrics."""
     df = add_target(df, scope=scope)
     train, test = time_train_test_split(df)
+    train = train.sort_values('week_start').reset_index(drop=True)
     X_train, y_train, _ = prepare_xy(train, scope=scope)
     X_test, y_test, mask_test = prepare_xy(test, scope=scope)
 
