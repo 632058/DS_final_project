@@ -10,11 +10,17 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso, LassoCV
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
 from src.constants import TRAIN_RATIO
+
+# Default alpha grid for Lasso cross-validation. Spans 5 decades so the
+# selected alpha is unlikely to hit a boundary.
+DEFAULT_LASSO_CV_ALPHAS = np.logspace(-3, 1, 9)
+DEFAULT_LASSO_CV_SPLITS = 5
 
 TARGET_COL = 'protest_count_next_week'
 
@@ -259,6 +265,33 @@ def train_lasso(X_train: pd.DataFrame, y_train: pd.Series, alpha: float = 1.0) -
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_train)
     model = Lasso(alpha=alpha, max_iter=10000)
+    model.fit(X_scaled, y_train)
+    return model, scaler
+
+
+def train_lasso_cv(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    alphas: np.ndarray | None = None,
+    n_splits: int = DEFAULT_LASSO_CV_SPLITS,
+) -> tuple:
+    """LassoCV with time-series cross-validation.
+
+    Returns ``(model, fitted_scaler)`` where ``model.alpha_`` holds the
+    CV-selected regularization strength. Uses :class:`TimeSeriesSplit` so
+    each validation fold draws from strictly later weeks than its training
+    fold, avoiding look-ahead bias.
+
+    Caller contract: ``X_train`` rows MUST be ordered by ``week_start``.
+    Both :func:`time_train_test_split` and :func:`prepare_xy` preserve that
+    ordering, so the standard pipeline satisfies this automatically.
+    """
+    if alphas is None:
+        alphas = DEFAULT_LASSO_CV_ALPHAS
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_train)
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    model = LassoCV(alphas=alphas, cv=tscv, max_iter=10000, n_jobs=-1)
     model.fit(X_scaled, y_train)
     return model, scaler
 
