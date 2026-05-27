@@ -1,6 +1,9 @@
 """Smoke tests for src.arimax_model."""
+import warnings
+
 import numpy as np
 import pandas as pd
+from statsmodels.tools.sm_exceptions import ConvergenceWarning, ValueWarning
 
 from src.arimax_model import (
     diagnose_residuals,
@@ -77,6 +80,24 @@ def test_fit_arimax_aic_is_finite():
     assert np.isfinite(result['bic'])
 
 
+def test_fit_arimax_suppresses_expected_statsmodels_warnings_for_weekly_index():
+    rng = np.random.default_rng(9)
+    weeks = pd.date_range('2022-01-03', periods=60, freq='W-MON')
+    index_without_freq = pd.DatetimeIndex(weeks.to_numpy())
+    y = pd.Series(rng.standard_normal(60), index=index_without_freq)
+    exog = pd.DataFrame({'x': rng.standard_normal(60)}, index=index_without_freq)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = fit_arimax(y, exog, order=(1, 0, 0))
+
+    assert 'converged' in result
+    assert not any(
+        issubclass(item.category, (ConvergenceWarning, ValueWarning))
+        for item in caught
+    )
+
+
 # ---------------------------------------------------------------------------
 # run_country_arimax — uses build_feature_matrix to generate realistic input
 # ---------------------------------------------------------------------------
@@ -114,7 +135,11 @@ def test_run_country_arimax_saves_outputs(tmp_path):
 def test_run_country_arimax_summary_keys(tmp_path):
     df = _make_feature_matrix()
     summary = run_country_arimax('CE', df, output_dir=tmp_path)
-    required = {'country', 'order', 'aic', 'bic', 'rmse', 'mae', 'n_train', 'n_test', 'exog_cols'}
+    required = {
+        'country', 'spec_name', 'target', 'order', 'requested_order', 'max_p', 'max_q',
+        'target_transform', 'exog_lag_set', 'aic', 'bic', 'converged', 'rmse', 'mae',
+        'n_train', 'n_test', 'exog_cols',
+    }
     assert required.issubset(summary.keys())
 
 
@@ -132,3 +157,45 @@ def test_run_country_arimax_metrics_are_finite(tmp_path):
     assert np.isfinite(summary['mae'])
     assert summary['n_train'] > 0
     assert summary['n_test'] > 0
+
+
+def test_run_country_arimax_accepts_custom_lags_and_order_without_saving(tmp_path):
+    df = _make_feature_matrix()
+    summary = run_country_arimax(
+        'CE',
+        df,
+        output_dir=tmp_path,
+        exog_lag_set={
+            'avg_tone': [1],
+            'avg_goldstein': [2],
+            'n_material_conf': [4],
+        },
+        order=(1, 0, 0),
+        spec_name='custom_test',
+        save_outputs=False,
+    )
+    assert summary['spec_name'] == 'custom_test'
+    assert summary['order'] == [1, 0, 0]
+    assert summary['requested_order'] == [1, 0, 0]
+    assert summary['exog_cols'] == ['avg_tone_lag1', 'avg_goldstein_lag2', 'n_material_conf_lag4']
+    assert not (tmp_path / 'CE.json').exists()
+    assert not (tmp_path / 'CE_forecast.parquet').exists()
+
+
+def test_run_country_arimax_log1p_writes_separate_nonnegative_forecast(tmp_path):
+    df = _make_feature_matrix()
+    summary = run_country_arimax(
+        'CE',
+        df,
+        output_dir=tmp_path,
+        order=(1, 0, 0),
+        target_transform='log1p',
+    )
+    forecast = pd.read_parquet(tmp_path / 'CE_log1p_forecast.parquet')
+    assert summary['target_transform'] == 'log1p'
+    assert (tmp_path / 'CE_log1p.json').exists()
+    assert not (tmp_path / 'CE.json').exists()
+    assert {'predicted_model_scale', 'ci_lower_model_scale', 'ci_upper_model_scale'}.issubset(forecast.columns)
+    assert (forecast[['predicted', 'ci_lower', 'ci_upper']] >= 0).all().all()
+    assert np.isfinite(summary['rmse'])
+    assert np.isfinite(summary['mae'])
