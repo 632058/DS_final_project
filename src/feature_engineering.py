@@ -54,6 +54,9 @@ def build_feature_matrix(df_weekly: pd.DataFrame) -> pd.DataFrame:
     Sorted by (country, week_start).
     """
     df = df_weekly.copy()
+    if 'protest_count_all' not in df.columns and 'protest_count' in df.columns:
+        df['protest_count_all'] = df['protest_count']
+
     df = df.sort_values(['country', 'week_start']).reset_index(drop=True)
     df = ensure_continuous_weeks(df)
     df = impute_missing(df)
